@@ -4,16 +4,17 @@ The automation is built once. A new customer site is a page you write, plus one
 script tag that points the page at their business.
 
 ```html
-<script src="https://YOUR-WIDGET-HOST/widget.js"
-        data-tenant="glow-salon"
-        data-api="https://YOUR-API-HOST"></script>
+<script src="https://YOUR-API-HOST/widget.js" data-tenant="glow-salon"></script>
 ```
 
-That is the whole integration. The bubble, the panel, the conversation, the
-availability rules and the booking all come from the engine. Nothing about a
-specific business lives in the widget bundle — name, greeting, colours, services,
-staff and hours are read from the database at runtime. **One widget build serves
-every customer.**
+That is the whole integration. The API serves its own widget bundle, so one URL
+covers both: the script finds the engine on the origin it was loaded from. Add
+`data-api="https://other-host"` only if you serve the bundle from a CDN.
+
+The bubble, the panel, the conversation, the availability rules and the booking
+all come from the engine. Nothing about a specific business lives in the widget
+bundle — name, greeting, colours, services, staff and hours are read from the
+database at runtime. **One widget build serves every customer.**
 
 ---
 
@@ -60,8 +61,15 @@ timezone.
 
 ## 2. Build the customer's site
 
-Write the page however you like — the demo in `examples/glow-salon` is a plain
-static page with no framework, and it is a fine starting point to copy. Then:
+Write the page however you like — the two demos are plain static pages with no
+framework, and both are fine starting points to copy:
+
+```
+examples/glow-salon/     # warm, editorial; bundle served beside the page
+examples/fade-factory/   # bold, dark; one tag, bundle served by the API
+```
+
+Then:
 
 1. Drop the snippet in before `</body>`, with their slug.
 2. Optionally point your own buttons at the chat:

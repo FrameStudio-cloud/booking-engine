@@ -10,7 +10,7 @@ import { extname, join, normalize, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const site = join(here, "glow-salon");
+const site = here; // serve every demo site under examples/
 const bundle = join(here, "..", "apps", "widget", "dist", "widget.js");
 const port = Number(process.env.PORT ?? 8080);
 
@@ -21,12 +21,14 @@ const types = {
   ".svg": "image/svg+xml",
 };
 
-await mkdir(site, { recursive: true });
-await copyFile(bundle, join(site, "widget.js"));
+await mkdir(join(site, "glow-salon"), { recursive: true });
+await copyFile(bundle, join(site, "glow-salon", "widget.js"));
 
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
-  const file = join(site, normalize(url.pathname === "/" ? "index.html" : url.pathname));
+  const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
+  const withIndex = pathname.endsWith("/") ? `${pathname}index.html` : pathname;
+  const file = join(site, normalize(withIndex));
 
   try {
     const body = await readFile(file);

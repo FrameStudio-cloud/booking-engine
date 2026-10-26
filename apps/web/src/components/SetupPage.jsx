@@ -7,9 +7,8 @@ import EngineOffline from "./EngineOffline.jsx";
 
 const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const snippet = `<script src="https://your-domain/widget.js"
-        data-tenant="glow-salon"
-        data-api="https://api.your-domain.com"></script>`;
+const snippet = `<script src="https://your-api-host/widget.js"
+        data-tenant="glow-salon"></script>`;
 
 export default function SetupPage() {
   const tenantQ = useAsync(getTenant, []);

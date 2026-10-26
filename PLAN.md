@@ -198,8 +198,10 @@ Notes:
 
 ## Phase 4 — Web widget
 
-- [x] Preact + Shadow DOM bundle, IIFE, < 60kb (19.7 kB raw / 8.2 kB gzip)
+- [x] Preact + Shadow DOM bundle, IIFE, < 60kb (20.2 kB raw / 8.4 kB gzip)
 - [x] Agent behind the widget (replaces the temporary slot lookup)
+- [x] One tag: the API serves `/widget.js`, and the widget assumes the engine
+      lives on the origin it loaded from (`data-api` only for CDN hosting)
 - [x] Embed snippet in dashboard Setup (copy button)
 - [x] Same conversation books the same slot as Telegram
 - [ ] SSE stream from `apps/api` (deferred: the reply rides back on the POST,
@@ -248,6 +250,14 @@ same conversations.
       engine, own services, hours and prices
 - [x] `INSTALL.md` — the copy-paste story
 - [x] Demo site with the widget live — `examples/glow-salon` (one script tag)
+- [x] Second site, second business — `examples/fade-factory`, same bundle,
+      different accent, corner, greeting, prices and hours
+- [x] Bugs found by provisioning the second business, both fixed:
+      - the model dropped "tomorrow" when the next message was just a time;
+        the prompt now carries the date forward
+      - `check_availability` capped its list at 10 and the model reported the
+        last row as "the latest" — it now takes an `around` time, orders by
+        distance from it, and says plainly when the list was cut
 - [ ] `presets/bnb.json`, `presets/restaurant.json` — the configs exist in shape,
       but rooms-per-night and table-plus-party still need their slot strategies
       proven before they are advertised

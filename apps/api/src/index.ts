@@ -1,4 +1,7 @@
 import { serve } from "@hono/node-server";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { runAgent } from "@booking/agent";
@@ -34,6 +37,37 @@ import { createTelegramBot } from "./telegram";
 import { runTurn } from "./pipeline";
 
 const app = new Hono();
+
+/**
+ * The widget bundle, served by the API itself.
+ *
+ * One URL is easier to hand a customer than "bundle here, API there": the
+ * snippet collapses to a single tag, and the widget assumes the API lives on
+ * the origin it was loaded from.
+ */
+const widgetBundle = (() => {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return readFileSync(resolve(here, "../../widget/dist/widget.js"), "utf8");
+  } catch {
+    return null;
+  }
+})();
+
+app.get("/widget.js", (c) => {
+  if (!widgetBundle) {
+    return c.text(
+      "widget bundle is not built: run `pnpm --filter @booking/widget build`",
+      503,
+    );
+  }
+
+  return c.body(widgetBundle, 200, {
+    "content-type": "text/javascript; charset=utf-8",
+    // Same file for every customer; short cache so a new build lands quickly.
+    "cache-control": "public, max-age=300",
+  });
+});
 
 // The dashboard is one origin. The widget is embedded anywhere, so it may come
 // from any host — decided per request rather than with a second middleware,

@@ -11,7 +11,11 @@ import styles from "./widget.css?inline";
  */
 const script = document.currentScript;
 const tenantSlug = script?.dataset?.tenant ?? "glow-salon";
-const apiBase = script?.dataset?.api ?? "";
+
+// One tag is enough: by default the API is wherever this script came from.
+// `data-api` exists for the case where the bundle is served from a CDN.
+const apiBase =
+  script?.dataset?.api ?? (script?.src ? new URL(script.src).origin : "");
 
 const host = document.createElement("div");
 document.body.appendChild(host);

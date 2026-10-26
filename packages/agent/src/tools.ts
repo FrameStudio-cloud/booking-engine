@@ -43,10 +43,15 @@ export function createTools(port: AgentPort): { tools: ToolSet; state: ToolState
   const tools = {
     check_availability: tool({
       description:
-        "Look up real open appointments for one service on one date. Call this before naming any time.",
+        "Look up real open appointments for one service on one date. Call this before naming any time. Pass `around` when the customer names a time, so the nearest real slots come back first.",
       inputSchema: z.object({
         service: z.string().describe("Exact service name from the services list"),
         date: z.string().describe("Date as YYYY-MM-DD in the business timezone"),
+        around: z
+          .string()
+          .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+          .optional()
+          .describe("Preferred start time as HH:MM, e.g. 18:00. Returns the closest slots first."),
         partySize: z
           .number()
           .int()
@@ -55,8 +60,8 @@ export function createTools(port: AgentPort): { tools: ToolSet; state: ToolState
           .optional()
           .describe("Number of guests. Restaurants only."),
       }),
-      execute: async ({ service, date, partySize }) => {
-        state.calls.push(`check_availability(${service}, ${date})`);
+      execute: async ({ service, date, around, partySize }) => {
+        state.calls.push(`check_availability(${service}, ${date}${around ? `, ${around}` : ""})`);
 
         const parsed = localDateSchema.safeParse(date);
         if (!parsed.success) {
@@ -70,11 +75,31 @@ export function createTools(port: AgentPort): { tools: ToolSet; state: ToolState
           state.offered.add(slot.startsAt.toISOString());
         }
 
+        // The list is capped, so order it by what the customer asked for and say
+        // plainly when it was cut — otherwise the model reads the last row as
+        // "the latest we have" and turns people away from an open evening.
+        const minutesOf = (value: Date) => {
+          const [h = 0, m = 0] = clock.format(value).split(":").map(Number);
+          return h * 60 + m;
+        };
+
+        const ordered = around
+          ? [...result.slots].sort(
+              (a, b) =>
+                Math.abs(minutesOf(a.startsAt) - toMinutes(around)) -
+                Math.abs(minutesOf(b.startsAt) - toMinutes(around)),
+            )
+          : result.slots;
+
+        const shown = ordered.slice(0, 10);
+        const cut = ordered.length > shown.length;
+
         return {
           date: parsed.data,
           day: day.format(result.slots[0]?.startsAt ?? port.now),
           open: result.slots.length,
-          slots: result.slots.slice(0, 10).map((s) => ({
+          shown: shown.length,
+          slots: shown.map((s) => ({
             localTime: clock.format(s.startsAt),
             startsAt: s.startsAt.toISOString(),
             endsAt: s.endsAt.toISOString(),
@@ -84,7 +109,9 @@ export function createTools(port: AgentPort): { tools: ToolSet; state: ToolState
           note:
             result.slots.length === 0
               ? "Nothing open that day. Offer the customer another date."
-              : undefined,
+              : cut
+                ? `Only ${shown.length} of ${ordered.length} open slots are shown, ${around ? `nearest ${around} first` : "earliest first"}. Do NOT say these are the only times or the latest times. Call again with \`around\` to see other parts of the day.`
+                : undefined,
         };
       },
     }),
@@ -199,4 +226,10 @@ export function createTools(port: AgentPort): { tools: ToolSet; state: ToolState
   };
 
   return { tools, state };
+}
+
+/** "18:00" -> 1080 minutes past midnight. */
+function toMinutes(hhmm: string): number {
+  const [hours, minutes] = hhmm.split(":").map(Number);
+  return (hours ?? 0) * 60 + (minutes ?? 0);
 }

@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fade Factory — Thika</title>
+    <meta name="description" content="Skin fades and beard work in Thika. Late hours, booked in chat." />
+    <style>
+      :root {
+        --ink: #0d1211;
+        --ink-60: rgba(13, 18, 17, 0.62);
+        --ink-40: rgba(13, 18, 17, 0.42);
+        --line: rgba(13, 18, 17, 0.14);
+        --green: #1f4d3d;
+        --paper: #eef1ec;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 20px 0;
+        border-bottom: 2px solid var(--ink);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        text-transform: uppercase;
+        font-size: 18px;
+      }
+
+      .brand span {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        background: var(--green);
+      }
+
+      .open-tag {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--green);
+        border: 1px solid var(--green);
+        border-radius: 999px;
+        padding: 5px 12px;
+      }
+
+      .hero {
+        padding: 64px 0 48px;
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 48px;
+        align-items: end;
+      }
+
+      @media (max-width: 800px) {
+        .hero {
+          grid-template-columns: 1fr;
+          gap: 28px;
+          padding: 40px 0 32px;
+        }
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2.6rem, 6vw, 4.2rem);
+        line-height: 0.95;
+        letter-spacing: -0.045em;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      h1 em {
+        font-style: normal;
+        color: var(--green);
+      }
+
+      .hero p {
+        margin: 18px 0 0;
+        max-width: 34ch;
+        font-size: 16px;
+        color: var(--ink-60);
+      }
+
+      .cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 26px;
+        background: var(--green);
+        color: #fff;
+        border: 0;
+        border-radius: 4px;
+        padding: 14px 20px;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+
+      .cta:hover {
+        background: #17392e;
+      }
+
+      .quote {
+        border-left: 3px solid var(--green);
+        padding: 2px 0 2px 18px;
+        font-size: 15px;
+        color: var(--ink-60);
+      }
+
+      .quote strong {
+        display: block;
+        margin-top: 8px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-40);
+      }
+
+      .board {
+        border-top: 2px solid var(--ink);
+        padding: 40px 0;
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 48px;
+      }
+
+      @media (max-width: 800px) {
+        .board {
+          grid-template-columns: 1fr;
+          gap: 32px;
+          padding: 32px 0;
+        }
+      }
+
+      h2 {
+        margin: 0 0 18px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-40);
+      }
+
+      .price {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .price .name {
+        font-size: 17px;
+        font-weight: 600;
+      }
+
+      .price .dots {
+        flex: 1;
+        border-bottom: 1px dotted var(--line);
+      }
+
+      .price .amount {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 14px;
+        white-space: nowrap;
+      }
+
+      .price .mins {
+        display: block;
+        font-size: 11px;
+        color: var(--ink-40);
+        letter-spacing: 0.04em;
+      }
+
+      .hours {
+        margin: 0;
+      }
+
+      .hours div {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 11px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+      }
+
+      .hours div span:last-child {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+        color: var(--ink-60);
+      }
+
+      footer {
+        border-top: 2px solid var(--ink);
+        padding: 22px 0 90px;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        color: var(--ink-40);
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="brand"><span aria-hidden="true"></span>Fade Factory</div>
+        <span class="open-tag">Open till 8pm</span>
+      </header>
+
+      <main>
+        <div class="hero">
+          <div>
+            <h1>Sharp<br /><em>every</em><br />time.</h1>
+            <p>
+              Two chairs, no queue. Ask the chat what's open after work and it books
+              the chair before someone else does.
+            </p>
+            <button class="cta" data-open-chat>Book a chair</button>
+          </div>
+
+          <div class="quote">
+            “Walk-ins welcome before 11am. After that, bookings first.”
+            <strong>House rule</strong>
+          </div>
+        </div>
+
+        <div class="board">
+          <div>
+            <h2>The board</h2>
+
+            <div class="price">
+              <span class="name">Skin fade<span class="mins">40 min</span></span>
+              <span class="dots" aria-hidden="true"></span>
+              <span class="amount">700</span>
+            </div>
+            <div class="price">
+              <span class="name">Beard trim<span class="mins">20 min</span></span>
+              <span class="dots" aria-hidden="true"></span>
+              <span class="amount">300</span>
+            </div>
+            <div class="price">
+              <span class="name">Cut and beard<span class="mins">60 min</span></span>
+              <span class="dots" aria-hidden="true"></span>
+              <span class="amount">900</span>
+            </div>
+          </div>
+
+          <div>
+            <h2>Hours</h2>
+            <div class="hours">
+              <div><span>Tuesday – Saturday</span><span>10:00 – 20:00</span></div>
+              <div><span>Sunday</span><span>11:00 – 17:00</span></div>
+              <div><span>Monday</span><span>Closed</span></div>
+            </div>
+            <p style="margin: 18px 0 0; font-size: 14px; color: var(--ink-60)">
+              Shop 4, Kenyatta Highway, Thika. M-Pesa only.
+            </p>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <span>Fade Factory · Thika</span>
+        <span>Chat and bookings by the booking engine</span>
+      </footer>
+    </div>
+
+    <script>
+      document.querySelectorAll("[data-open-chat]").forEach((button) => {
+        button.addEventListener("click", () => window.BookingWidget?.open());
+      });
+    </script>
+
+    <!-- One tag. No data-api: the widget assumes the API lives where it loaded from. -->
+    <script src="http://127.0.0.1:8787/widget.js" data-tenant="fade-factory"></script>
+  </body>
+</html>
