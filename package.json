@@ -12,6 +12,7 @@
     "build": "pnpm -r --if-present build",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
+    "demo": "pnpm --filter @booking/widget build && node examples/serve.mjs",
     "db:generate": "pnpm --filter @booking/db generate",
     "db:migrate": "pnpm --filter @booking/db migrate",
     "db:seed": "pnpm --filter @booking/db seed",

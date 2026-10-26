@@ -26,3 +26,8 @@ const mount = document.createElement("div");
 shadow.appendChild(mount);
 
 render(<Widget tenantSlug={tenantSlug} apiBase={apiBase} />, mount);
+
+// Small public surface for the host page. Nothing else is exposed.
+window.BookingWidget = {
+  open: () => window.dispatchEvent(new Event("booking-widget:open")),
+};

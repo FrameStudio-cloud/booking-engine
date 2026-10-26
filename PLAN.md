@@ -198,11 +198,29 @@ Notes:
 
 ## Phase 4 — Web widget
 
-- [x] Preact + Shadow DOM bundle, IIFE, < 60kb (shell: 7.5 kB gzip)
-- [ ] Agent behind the widget (replaces the temporary slot lookup)
-- [ ] SSE stream from `apps/api`
-- [ ] Embed snippet generator in dashboard
-- [ ] Same conversation books the same slot as Telegram
+- [x] Preact + Shadow DOM bundle, IIFE, < 60kb (19.7 kB raw / 8.2 kB gzip)
+- [x] Agent behind the widget (replaces the temporary slot lookup)
+- [x] Embed snippet in dashboard Setup (copy button)
+- [x] Same conversation books the same slot as Telegram
+- [ ] SSE stream from `apps/api` (deferred: the reply rides back on the POST,
+      which is one round trip and survives proxies; streaming is a nicety)
+
+How the widget works now:
+
+- `POST /api/tenants/:slug/widget/messages` calls the same `runTurn` →
+  `handleInbound` pipeline Telegram uses. Only the `Channel` differs: a capture
+  channel collects the outbound text and returns it in the response body.
+- `GET /api/tenants/:slug/widget/messages?sessionId=` rehydrates the thread, so
+  a reload keeps the conversation and the booking already made in it.
+- The session id is minted in the browser (`localStorage` key
+  `booking-engine:session:<tenant>`) and is the conversation's `externalId`.
+- CORS is path-aware in one middleware: dashboard routes answer one origin, the
+  `/widget/` routes echo the embedding origin. The dashboard's global policy
+  answers preflights before any second middleware could run, so this has to be
+  one function, not two registrations.
+- `window.BookingWidget.open()` lets a host page's own buttons open the chat.
+- When the widget books, the conversation takes the customer's name from the
+  booking, so the inbox shows a person instead of "Unknown customer".
 
 ## Phase 5 — Dashboard + staff takeover
 
@@ -210,16 +228,20 @@ Notes:
 - [x] Read endpoints: `/bookings?date=`, `/conversations`, `/conversations/:id`
 - [x] Staff reply, takeover and handback — replies go out through the same
       `Channel.send` the bot uses, and are stored before delivery
-- [ ] Auth, tenant switcher
-- [ ] Wire shell mock data to the real API (services / resources / hours / bookings)
-- [ ] Inbox: conversations, `status: bot | needs_human | human`
-- [ ] Human reply goes out through `Channel.send` (same path as bot)
+- [x] Wire shell to the real API (services / resources / hours / bookings)
+- [x] Inbox: conversations, `status: bot | needs_human | human`
+- [x] Human reply goes out through `Channel.send` (same path as bot)
+- [ ] Auth, tenant switcher — the dashboard is a local-only tool until then
+
+The dashboard is deliberately a *staff tool*, not the product. Businesses get
+their own site with the widget on it; this app is where their staff watch the
+same conversations.
 
 ## Phase 6 — Presets + demo site
 
 - [ ] `presets/salon.json`, `presets/bnb.json`, `presets/restaurant.json`
 - [ ] Seed script: one demo business end-to-end
-- [ ] Demo marketing page with the widget live
+- [x] Demo site with the widget live — `examples/glow-salon` (one script tag)
 
 ## Later (explicitly not now)
 
@@ -237,6 +259,7 @@ pnpm install          # install everything
 pnpm test             # run core tests
 pnpm typecheck        # tsc across packages
 pnpm dev              # api + web + widget in parallel
+pnpm demo             # build the widget, serve examples/glow-salon on :8080
 pnpm db:generate      # drizzle migration from schema
 pnpm db:push          # apply schema to Neon
 ```

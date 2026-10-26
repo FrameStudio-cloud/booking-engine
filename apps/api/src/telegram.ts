@@ -1,22 +1,8 @@
 import { Bot } from "grammy";
-import { runAgent } from "@booking/agent";
-import {
-  appendMessage,
-  getOrCreateConversation,
-  getTenantBySlug,
-  recentMessages,
-  setConversationStatus,
-  toModelHistory,
-  type Database,
-} from "@booking/db";
-import {
-  createTelegramChannel,
-  handleInbound,
-  type Channel,
-  type ConversationStore,
-} from "@booking/channels";
+import type { Database } from "@booking/db";
+import { createTelegramChannel, type Channel } from "@booking/channels";
 
-import { buildAgentPort } from "./agent-port";
+import { runTurn } from "./pipeline";
 
 export interface TelegramBotOptions {
   token: string;
@@ -33,72 +19,19 @@ export function createTelegramBot(options: TelegramBotOptions) {
   const bot = new Bot(token);
   const channel = options.channel ?? createTelegramChannel(token);
 
-  /**
-   * One inbound message, end to end. Both polling and webhook land here,
-   * so the transport cannot change behaviour.
-   */
   async function onText(chatId: string, text: string, customerName?: string | null) {
-    const tenant = await getTenantBySlug(db, tenantSlug);
-    if (!tenant) throw new Error(`unknown tenant: ${tenantSlug}`);
-
-    // The thread exists before the model runs, so the port can enforce
-    // "one booking per chat" and the conversation row is never orphaned.
-    const conversation = await getOrCreateConversation(db, {
-      tenantId: tenant.id,
-      channel: "telegram",
+    const result = await runTurn({
+      db,
+      tenantSlug,
+      channel,
       externalId: chatId,
+      text,
       customerName: customerName ?? null,
+      apiKey: options.apiKey,
+      model: options.model,
     });
 
-    const port = await buildAgentPort(db, tenant.slug, new Date(), conversation.id);
-    if (!port) throw new Error(`could not build agent port for ${tenantSlug}`);
-
-    const store: ConversationStore = {
-      getOrCreate: async (event) => {
-        const row = await getOrCreateConversation(db, {
-          tenantId: tenant.id,
-          channel: event.channel,
-          externalId: event.externalId,
-          customerName: event.customerName,
-        });
-        return { id: row.id, status: row.status };
-      },
-      append: async (conversationId, role, content) => {
-        await appendMessage(db, conversationId, role, content);
-      },
-      history: async (conversationId, limit) =>
-        toModelHistory(await recentMessages(db, conversationId, limit)),
-      setStatus: async (conversationId, status) => {
-        await setConversationStatus(db, conversationId, status);
-      },
-    };
-
-    await handleInbound(
-      {
-        store,
-        channel,
-        agent: {
-          run: async (history) => {
-            const result = await runAgent(port, history, {
-              apiKey: options.apiKey,
-              model: options.model,
-            });
-            return { text: result.text, escalated: result.escalated };
-          },
-        },
-        logger: {
-          info: (message, meta) => console.log(`[telegram] ${message}`, meta ?? ""),
-          error: (message, error) => console.error(`[telegram] ${message}`, error),
-        },
-      },
-      {
-        tenantId: tenant.id,
-        channel: "telegram",
-        externalId: chatId,
-        text,
-        customerName: customerName ?? null,
-      },
-    );
+    if (!result) throw new Error(`unknown tenant: ${tenantSlug}`);
   }
 
   const displayName = (from?: { first_name: string; last_name?: string }): string | null =>

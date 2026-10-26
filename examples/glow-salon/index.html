@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Glow Salon — Thika</title>
+    <meta
+      name="description"
+      content="Braids, blow-outs and trims in Thika. Book in a chat, no forms."
+    />
+    <style>
+      :root {
+        --paper: #f7f3ec;
+        --ink: #191512;
+        --ink-60: rgba(25, 21, 18, 0.6);
+        --ink-40: rgba(25, 21, 18, 0.4);
+        --line: rgba(25, 21, 18, 0.12);
+        --clay: #a4502a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-size: 16px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      .serif {
+        font-family: ui-serif, Georgia, "Times New Roman", serif;
+        font-weight: 500;
+        letter-spacing: -0.02em;
+      }
+
+      /* ---- top bar ---- */
+      .bar {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 22px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .mark {
+        font-size: 19px;
+        letter-spacing: -0.01em;
+      }
+
+      .bar-meta {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        font-size: 13px;
+        color: var(--ink-60);
+      }
+
+      @media (max-width: 640px) {
+        .bar-meta span {
+          display: none;
+        }
+      }
+
+      /* ---- hero ---- */
+      .hero {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 56px;
+        align-items: start;
+        padding: 72px 0 64px;
+      }
+
+      @media (max-width: 860px) {
+        .hero {
+          grid-template-columns: 1fr;
+          gap: 36px;
+          padding: 48px 0 40px;
+        }
+      }
+
+      .eyebrow {
+        margin: 0 0 20px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--ink-40);
+      }
+
+      h1 {
+        margin: 0 0 22px;
+        font-size: clamp(2.4rem, 5.2vw, 3.6rem);
+        line-height: 1.04;
+      }
+
+      .lede {
+        margin: 0 0 30px;
+        max-width: 46ch;
+        font-size: 17px;
+        color: var(--ink-60);
+      }
+
+      .cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--clay);
+        color: #fff;
+        padding: 14px 22px;
+        font: inherit;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .cta:hover {
+        background: #8d4324;
+      }
+
+      .cta-note {
+        margin: 14px 0 0;
+        font-size: 13px;
+        color: var(--ink-40);
+      }
+
+      /* ---- price card ---- */
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.5);
+        padding: 26px;
+      }
+
+      .card h2 {
+        margin: 0 0 4px;
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .card p.sub {
+        margin: 0 0 18px;
+        font-size: 13px;
+        color: var(--ink-40);
+      }
+
+      .row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 13px 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .row:first-of-type {
+        border-top: 0;
+      }
+
+      .row .name {
+        font-size: 15px;
+      }
+
+      .row .dur {
+        display: block;
+        font-size: 12px;
+        color: var(--ink-40);
+      }
+
+      .row .price {
+        font-variant-numeric: tabular-nums;
+        font-size: 14px;
+        white-space: nowrap;
+      }
+
+      /* ---- sections ---- */
+      section {
+        padding: 56px 0;
+        border-top: 1px solid var(--line);
+      }
+
+      h2.section-title {
+        margin: 0 0 8px;
+        font-size: clamp(1.5rem, 3vw, 2rem);
+      }
+
+      .section-sub {
+        margin: 0 0 32px;
+        max-width: 54ch;
+        color: var(--ink-60);
+        font-size: 15px;
+      }
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 28px;
+      }
+
+      @media (max-width: 780px) {
+        .steps {
+          grid-template-columns: 1fr;
+          gap: 22px;
+        }
+      }
+
+      .step .n {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        color: var(--ink-40);
+      }
+
+      .step h3 {
+        margin: 6px 0 6px;
+        font-size: 16px;
+      }
+
+      .step p {
+        margin: 0;
+        font-size: 14px;
+        color: var(--ink-60);
+      }
+
+      .hours {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 40px;
+      }
+
+      @media (max-width: 780px) {
+        .hours {
+          grid-template-columns: 1fr;
+          gap: 28px;
+        }
+      }
+
+      .hours dl {
+        margin: 0;
+      }
+
+      .hours .entry {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+      }
+
+      .hours .entry span:last-child {
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-60);
+      }
+
+      .address {
+        font-style: normal;
+        font-size: 15px;
+        line-height: 1.8;
+        color: var(--ink-60);
+      }
+
+      .address strong {
+        display: block;
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 28px 0 96px;
+        font-size: 13px;
+        color: var(--ink-40);
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--clay);
+        outline-offset: 3px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="bar">
+        <span class="mark serif">Glow Salon</span>
+        <div class="bar-meta">
+          <span>Thika Road, Thika</span>
+          <button class="cta" style="padding: 10px 16px; font-size: 14px" data-open-chat>
+            Book in chat
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <div class="hero">
+          <div>
+            <p class="eyebrow">Salon · Thika, Kenya</p>
+            <h1 class="serif">Braids, blow-outs, and a trim that fits your week.</h1>
+            <p class="lede">
+              Two stylists, three services, six days a week. Ask the chat what's open
+              tomorrow and it will hold the slot for you — no forms, no waiting for a
+              reply on WhatsApp.
+            </p>
+            <button class="cta" data-open-chat>Check tomorrow's slots</button>
+            <p class="cta-note">Replies in seconds. Weekdays and Saturdays, 9am – 6pm.</p>
+          </div>
+
+          <aside class="card" aria-label="Services and prices">
+            <h2>Services</h2>
+            <p class="sub">Prices in Kenyan shillings.</p>
+
+            <div class="row">
+              <div>
+                <span class="name">Braiding</span>
+                <span class="dur">120 min</span>
+              </div>
+              <span class="price">KES 2,500</span>
+            </div>
+
+            <div class="row">
+              <div>
+                <span class="name">Wash &amp; blow-dry</span>
+                <span class="dur">60 min</span>
+              </div>
+              <span class="price">KES 1,200</span>
+            </div>
+
+            <div class="row">
+              <div>
+                <span class="name">Trim</span>
+                <span class="dur">45 min</span>
+              </div>
+              <span class="price">KES 800</span>
+            </div>
+          </aside>
+        </div>
+
+        <section aria-labelledby="how">
+          <h2 class="section-title serif" id="how">How booking works</h2>
+          <p class="section-sub">
+            The same assistant answers on this site and on Telegram. It only offers
+            times that are actually free, and it books the slot the moment you say yes.
+          </p>
+
+          <div class="steps">
+            <div class="step">
+              <span class="n">01</span>
+              <h3>Say what you need</h3>
+              <p>“Do you have anything for braids on Saturday?” A service and a day is enough.</p>
+            </div>
+            <div class="step">
+              <span class="n">02</span>
+              <h3>Pick a time</h3>
+              <p>You get real openings with the stylist's name, in East Africa Time.</p>
+            </div>
+            <div class="step">
+              <span class="n">03</span>
+              <h3>It's held</h3>
+              <p>The slot is written down straight away. Only one person can take it.</p>
+            </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="visit">
+          <h2 class="section-title serif" id="visit">Come by</h2>
+          <div class="hours">
+            <div>
+              <dl>
+                <div class="entry"><span>Monday – Friday</span><span>9:00 – 18:00</span></div>
+                <div class="entry"><span>Saturday</span><span>9:00 – 18:00</span></div>
+                <div class="entry"><span>Sunday</span><span>Closed</span></div>
+              </dl>
+            </div>
+            <div>
+              <address class="address">
+                <strong>Glow Salon</strong>
+                Second floor, Thika Arcade<br />
+                Kenyatta Highway, Thika<br />
+                <a href="tel:+254700000000" style="color: inherit">+254 700 000 000</a>
+              </address>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>© Glow Salon, Thika</span>
+        <span>Bookings handled by the booking engine.</span>
+      </footer>
+    </div>
+
+    <script>
+      document.querySelectorAll("[data-open-chat]").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (window.BookingWidget) window.BookingWidget.open();
+        });
+      });
+    </script>
+
+    <!-- The whole integration: one script tag. -->
+    <script src="./widget.js" data-tenant="glow-salon" data-api="http://127.0.0.1:8787"></script>
+  </body>
+</html>

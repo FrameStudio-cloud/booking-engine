@@ -3,6 +3,7 @@ import {
   findBookingForConversation,
   loadBusyIntervals,
   loadTenantContext,
+  nameConversation,
   resolveService,
   toSharedService,
   type Database,
@@ -192,6 +193,12 @@ export async function buildAgentPort(
         }
 
         return { ok: false, message: "That slot was just taken. Offer another time." };
+      }
+
+      // Staff need a name in the inbox, not "Unknown customer". The booking has
+      // one even when the channel never gave us one.
+      if (conversationId && input.customerName) {
+        await nameConversation(db, conversationId, input.customerName);
       }
 
       return { ok: true, id: outcome.booking.id, startsAt: outcome.booking.startsAt };

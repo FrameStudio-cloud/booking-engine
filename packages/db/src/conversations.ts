@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import type { Database } from "./client";
 import {
   conversations,
@@ -125,6 +125,40 @@ export async function listConversations(
     .where(eq(conversations.tenantId, tenantId))
     .orderBy(desc(conversations.lastMessageAt))
     .limit(limit);
+}
+
+/**
+ * Fill in a display name once we learn it (usually from the booking form in
+ * chat). Never overwrites a name the channel already gave us.
+ */
+export async function nameConversation(
+  db: Database,
+  conversationId: string,
+  customerName: string,
+): Promise<void> {
+  await db
+    .update(conversations)
+    .set({ customerName })
+    .where(and(eq(conversations.id, conversationId), isNull(conversations.customerName)));
+}
+
+export async function getConversationByExternalId(
+  db: Database,
+  identity: {
+    tenantId: string;
+    channel: "telegram" | "widget" | "whatsapp";
+    externalId: string;
+  },
+): Promise<ConversationRow | null> {
+  const row = await db.query.conversations.findFirst({
+    where: and(
+      eq(conversations.tenantId, identity.tenantId),
+      eq(conversations.channel, identity.channel),
+      eq(conversations.externalId, identity.externalId),
+    ),
+  });
+
+  return row ?? null;
 }
 
 export async function getConversation(

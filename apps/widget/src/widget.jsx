@@ -1,39 +1,92 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 
 /**
- * Widget UI only. Wiring to the agent (SSE, conversation persistence,
- * staff takeover) is phase 4 — the small slot lookup below is a temporary
- * bridge so the bubble demonstrates the real engine end to end today.
+ * The widget is a thin shell around the same engine the Telegram bot uses:
+ * it posts a message, the server runs the one `handleInbound` pipeline, and the
+ * reply comes back on the response. Nothing about availability or booking
+ * lives in here.
  */
 
-const GREETING = "Hi 👋 I can check availability and hold a spot for you. Ask me what's free.";
+const GREETING =
+  "Hi — I can check what's free and hold a spot for you. What are you after?";
 
-function tomorrow() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+const SESSION_RE = /^[A-Za-z0-9_-]{8,128}$/;
+
+function sessionId(tenantSlug) {
+  const key = `booking-engine:session:${tenantSlug}`;
+  try {
+    const existing = localStorage.getItem(key);
+    if (existing && SESSION_RE.test(existing)) return existing;
+
+    const fresh =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+
+    localStorage.setItem(key, fresh);
+    return fresh;
+  } catch {
+    // Private mode with storage disabled: the chat still works for this visit.
+    return `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  }
 }
 
-async function lookupSlots(apiBase, tenantSlug) {
-  const url = `${apiBase}/api/tenants/${tenantSlug}/slots?date=${tomorrow()}&service=trim`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`lookup failed (${res.status})`);
-  return res.json();
-}
+const timeLabel = (iso) =>
+  iso
+    ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
 
-export function Widget({ tenantSlug, apiBase }) {
+export function Widget({ tenantSlug, apiBase, businessName = "Glow Salon" }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [messages, setMessages] = useState([{ role: "assistant", text: GREETING }]);
+  const [status, setStatus] = useState("bot");
+  const [messages, setMessages] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [notice, setNotice] = useState(null);
+
   const logRef = useRef(null);
+  const inputRef = useRef(null);
+  const session = useRef(sessionId(tenantSlug));
+
+  const url = (path) => `${apiBase}${path}`;
+  const base = () => url(`/api/tenants/${tenantSlug}/widget/messages`);
 
   useEffect(() => {
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, open]);
+  }, [messages, busy, open, notice]);
 
-  const push = (role, text) => setMessages((prev) => [...prev, { role, text }]);
+  useEffect(() => {
+    if (open && inputRef.current) inputRef.current.focus();
+  }, [open]);
+
+  // Host sites open the chat with their own buttons:
+  //   window.BookingWidget.open()
+  useEffect(() => {
+    const handler = () => setOpen(true);
+    window.addEventListener("booking-widget:open", handler);
+    return () => window.removeEventListener("booking-widget:open", handler);
+  }, []);
+
+  useEffect(() => {
+    if (!open || loaded) return;
+    let alive = true;
+
+    fetch(`${base()}?sessionId=${encodeURIComponent(session.current)}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((data) => {
+        if (!alive) return;
+        setMessages(data.messages ?? []);
+        setStatus(data.status ?? "bot");
+        setLoaded(true);
+      })
+      .catch(() => alive && setLoaded(true));
+
+    return () => {
+      alive = false;
+    };
+  }, [open, loaded]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -41,30 +94,41 @@ export function Widget({ tenantSlug, apiBase }) {
     if (!text || busy) return;
 
     setInput("");
-    push("user", text);
-
-    const wantsTimes = /free|available|slot|time|tomorrow|book/i.test(text);
-    if (!wantsTimes) {
-      push("assistant", "The booking agent connects in the next phase — ask me about tomorrow's times and I'll query the engine directly.");
-      return;
-    }
-
+    setNotice(null);
+    setMessages((prev) => [...prev, { id: `local-${Date.now()}`, role: "user", text }]);
     setBusy(true);
+
     try {
-      const data = await lookupSlots(apiBase, tenantSlug);
-      if (data.slots.length === 0) {
-        push("assistant", "Nothing free tomorrow, I'm afraid. Try another day?");
-      } else {
-        const times = data.slots
-          .slice(0, 4)
-          .map((s) =>
-            new Date(s.startsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          )
-          .join(", ");
-        push("assistant", `Tomorrow I have ${times} with ${data.slots[0].resourceName}. Want one?`);
+      const res = await fetch(base(), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: session.current, text }),
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
+
+      const replies = data.replies ?? [];
+      setMessages((prev) => [
+        ...prev,
+        ...replies.map((reply, i) => ({
+          id: `reply-${Date.now()}-${i}`,
+          role: "assistant",
+          text: reply,
+        })),
+      ]);
+
+      setStatus(data.status ?? "bot");
+      if (replies.length === 0) {
+        setNotice("A team member has this chat open and will reply here.");
       }
-    } catch {
-      push("assistant", "I couldn't reach the engine just now. Please try again in a moment.");
+    } catch (error) {
+      const offline = error instanceof TypeError; // fetch never reached the server
+      setNotice(
+        offline || /50[23]/.test(error.message ?? "")
+          ? "I can't reach the booking engine right now. Please try again in a moment."
+          : error.message,
+      );
     } finally {
       setBusy(false);
     }
@@ -73,26 +137,51 @@ export function Widget({ tenantSlug, apiBase }) {
   return (
     <div class="bw-root">
       {open && (
-        <div class="bw-panel" role="dialog" aria-label="Booking chat">
+        <div
+          class="bw-panel"
+          role="dialog"
+          aria-label={`Chat with ${businessName}`}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setOpen(false);
+          }}
+        >
           <div class="bw-head">
-            Glow Salon
-            <small>Usually replies instantly</small>
+            {businessName}
+            <small>{status === "human" ? "A team member is replying" : "Usually replies instantly"}</small>
+            <button class="bw-close" onClick={() => setOpen(false)} aria-label="Close chat">
+              ×
+            </button>
           </div>
 
-          <div class="bw-log" ref={logRef}>
-            {messages.map((m, i) => (
-              <div key={i} class={`bw-msg ${m.role}`}>
+          <div class="bw-log" ref={logRef} role="log" aria-live="polite">
+            <div class="bw-msg assistant">{GREETING}</div>
+
+            {messages.map((m) => (
+              <div key={m.id} class={`bw-msg ${m.role === "user" ? "user" : "assistant"}`}>
                 {m.text}
+                {m.at && <span class="bw-time">{timeLabel(m.at)}</span>}
               </div>
             ))}
+
+            {busy && (
+              <div class="bw-msg assistant bw-typing" aria-label="Typing">
+                <span />
+                <span />
+                <span />
+              </div>
+            )}
+
+            {notice && <div class="bw-notice">{notice}</div>}
           </div>
 
           <form class="bw-form" onSubmit={handleSubmit}>
             <input
+              ref={inputRef}
               value={input}
               onInput={(e) => setInput(e.currentTarget.value)}
-              placeholder="Ask about availability…"
+              placeholder="Ask about a service or a time…"
               aria-label="Message"
+              maxLength={2000}
             />
             <button type="submit" disabled={busy || !input.trim()}>
               Send
@@ -105,6 +194,7 @@ export function Widget({ tenantSlug, apiBase }) {
         class="bw-bubble"
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? "Close chat" : "Open chat"}
+        aria-expanded={open}
       >
         {open ? "×" : "💬"}
       </button>

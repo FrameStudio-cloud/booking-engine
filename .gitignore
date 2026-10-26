@@ -4,6 +4,9 @@ build/
 coverage/
 *.tsbuildinfo
 
+# Built widget copied next to each demo site by `pnpm demo`.
+examples/*/widget.js
+
 .env
 .env.local
 .env.*.local
