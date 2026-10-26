@@ -1,0 +1,19 @@
+{
+  "name": "booking-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm -r --if-present build",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "db:generate": "pnpm --filter @booking/db generate",
+    "db:push": "pnpm --filter @booking/db push",
+    "db:studio": "pnpm --filter @booking/db studio"
+  }
+}
