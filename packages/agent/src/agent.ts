@@ -13,6 +13,20 @@ export interface RunAgentOptions {
 }
 
 /**
+ * The model occasionally degenerates into punctuation runs ("Good ......").
+ * That is not a reply a customer should ever receive.
+ */
+export function isDegenerate(text: string): boolean {
+  if (!/[a-z]/i.test(text)) return true;
+  if (/\.{4,}/.test(text)) return true;
+
+  const letters = (text.match(/[a-z]/gi) ?? []).length;
+  return letters / text.length < 0.4;
+}
+
+export const FALLBACK_REPLY = "Sorry — I didn't catch that. Could you say it another way?";
+
+/**
  * One turn of the conversation. Stateless: pass the history, get a reply.
  * Persistence lives in the caller.
  */
@@ -37,10 +51,10 @@ export async function runAgent(
     temperature: 0.3,
   });
 
+  const trimmed = text.trim();
+
   return {
-    text:
-      text.trim() ||
-      "Sorry — I didn't catch that. Could you say it another way?",
+    text: trimmed.length === 0 || isDegenerate(trimmed) ? FALLBACK_REPLY : trimmed,
     escalated: state.escalated,
     bookingId: state.bookingId,
     toolCalls: state.calls,

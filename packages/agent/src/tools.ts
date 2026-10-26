@@ -107,6 +107,14 @@ export function createTools(port: AgentPort): { tools: ToolSet; state: ToolState
           return { error: "startsAt must be an ISO timestamp returned by check_availability" };
         }
 
+        // One booking per chat. Refuse before touching the engine.
+        if (port.existingBooking) {
+          const held = port.existingBooking;
+          return {
+            error: `This customer already has a booking: ${held.serviceName} with ${held.resourceName} on ${day.format(held.startsAt)} at ${clock.format(held.startsAt)}. Do not create another one. Confirm exactly these details and answer their question.`,
+          };
+        }
+
         // The guard. No invented slots, ever.
         if (!state.offered.has(when.toISOString())) {
           return {

@@ -151,6 +151,35 @@ describe("createTools", () => {
     expect(state.bookingId).toBeNull();
   });
 
+  it("refuses a second booking when the chat already owns one", async () => {
+    const { tools, state } = build(
+      fakePort({
+        existingBooking: {
+          id: "booking-existing",
+          serviceName: "Trim",
+          resourceName: "Amani",
+          startsAt: new Date("2026-10-27T06:00:00.000Z"),
+        },
+      }),
+    );
+
+    await call(tools.check_availability.execute, {
+      service: "Trim",
+      date: "2026-10-27",
+    });
+
+    const result = (await call(tools.create_booking.execute, {
+      service: "Trim",
+      resourceId: "staff-grace",
+      startsAt: "2026-10-27T06:00:00.000Z",
+      customerName: "Lewis Irungu",
+    })) as { error?: string };
+
+    expect(result.error).toMatch(/already has a booking/i);
+    expect(result.error).toContain("Amani");
+    expect(state.bookingId).toBeNull();
+  });
+
   it("recovers cleanly from a rejected date", async () => {
     const { tools } = build(fakePort());
     const result = (await call(tools.check_availability.execute, {

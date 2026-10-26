@@ -31,6 +31,13 @@ export interface OfferedSlot {
   endsAt: Date;
 }
 
+export interface BookingBrief {
+  id: string;
+  serviceName: string;
+  resourceName: string;
+  startsAt: Date;
+}
+
 export type SlotsResult =
   | { ok: true; slots: OfferedSlot[] }
   | { ok: false; message: string };
@@ -45,6 +52,8 @@ export interface AgentPort {
   staff: StaffBrief[];
   /** "Now" in the caller's clock — injected so the agent is testable. */
   now: Date;
+  /** The live booking this chat already owns, if any. */
+  existingBooking?: BookingBrief | null;
   findSlots(input: {
     service: string;
     date: LocalDate;

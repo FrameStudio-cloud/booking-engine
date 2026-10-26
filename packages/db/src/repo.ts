@@ -157,7 +157,7 @@ export type CreateBookingInput = {
 export type CreateBookingOutcome =
   | { ok: true; booking: BookingRow }
   | { ok: false; reason: "resource_busy"; capacity: number }
-  | { ok: false; reason: "already_booked"; bookingId: string; startsAt: Date }
+  | { ok: false; reason: "already_booked"; bookingId: string; startsAt: Date; serviceId: string; resourceId: string }
   | { ok: false; reason: "no_such_resource" | "no_such_service" | "resource_inactive" | "service_inactive" };
 
 /**
@@ -194,7 +194,12 @@ export async function createBooking(
     // "thanks, bye" message must not double-book the customer.
     if (input.conversationId) {
       const [existing] = await tx
-        .select({ id: bookings.id, startsAt: bookings.startsAt })
+        .select({
+          id: bookings.id,
+          startsAt: bookings.startsAt,
+          serviceId: bookings.serviceId,
+          resourceId: bookings.resourceId,
+        })
         .from(bookings)
         .where(
           and(
@@ -210,6 +215,8 @@ export async function createBooking(
           reason: "already_booked",
           bookingId: existing.id,
           startsAt: existing.startsAt,
+          serviceId: existing.serviceId,
+          resourceId: existing.resourceId,
         } as const;
       }
     }

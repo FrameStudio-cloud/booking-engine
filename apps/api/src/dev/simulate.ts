@@ -39,6 +39,8 @@ const lines = [
   "book the first one please",
   CUSTOMER,
   "thanks, bye",
+  "hi, do you have a trim tomorrow?",
+  CUSTOMER,
 ];
 
 for (const [index, line] of lines.entries()) {
@@ -72,4 +74,23 @@ const booked = await db.query.bookings.findMany({
 console.log(`\nbookings for ${CUSTOMER}: ${booked.length}`);
 for (const row of booked) console.log(`  ${row.startsAt.toISOString()} (${row.status})`);
 
-process.exit(booked.length === 1 ? 0 : 1);
+if (booked.length !== 1) {
+  console.error("FAIL: expected exactly one booking");
+  process.exit(1);
+}
+
+const bookedResource = await db.query.resources.findFirst({
+  where: (table, { eq }) => eq(table.id, booked[0]!.resourceId),
+});
+const others = await db.query.resources.findMany();
+const wrong = others.filter((r) => r.id !== bookedResource?.id).map((r) => r.name);
+
+const last = sent.at(-1) ?? "";
+const namesRight = bookedResource ? last.includes(bookedResource.name) : false;
+const noInvented = wrong.every((name) => !last.includes(name));
+
+console.log(`\nlast reply: ${last}`);
+console.log(`names the booked resource (${bookedResource?.name}): ${namesRight}`);
+console.log(`invents another name: ${!noInvented}`);
+
+process.exit(namesRight && noInvented ? 0 : 1);

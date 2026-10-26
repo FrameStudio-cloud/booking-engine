@@ -2,12 +2,20 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { runAgent } from "@booking/agent";
+import { createTelegramChannel, type Channel } from "@booking/channels";
 import {
+  appendMessage,
+  conversationSummaries,
   createBooking,
+  getConversationById,
+  getTenantBySlug,
+  listBookings,
   loadBusyIntervals,
   loadTenantContext,
+  messageThread,
   pingDatabase,
   resolveService,
+  setConversationStatus,
   toSharedService,
 } from "@booking/db";
 import {
@@ -280,9 +288,162 @@ app.post("/api/tenants/:slug/chat", async (c) => {
 });
 
 /**
- * Telegram: polling locally, webhook in production.
- * Both routes feed the same `handleInbound` pipeline.
+ * Dashboard reads.
+ *
+ * No auth yet — these are the endpoints the shell will consume, and they close
+ * as soon as tenant auth lands (phase 5). Everything is tenant-scoped by slug.
  */
+app.get("/api/tenants/:slug/bookings", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  const today = toLocalDate(new Date(), tenant.timezone);
+  const parsed = localDateSchema.safeParse(c.req.query("date") ?? today);
+  if (!parsed.success) return c.json({ error: "date must be YYYY-MM-DD" }, 400);
+  const date = parsed.data as LocalDate;
+
+  const from = zonedTimeToUtc(date, "00:00", tenant.timezone);
+  const to = zonedTimeToUtc(addDays(date, 1), "00:00", tenant.timezone);
+  const rows = await listBookings(db, tenant.id, { from, to });
+
+  return c.json({
+    date,
+    bookings: rows.map((row) => ({
+      ...row,
+      startsAt: row.startsAt.toISOString(),
+      endsAt: row.endsAt.toISOString(),
+    })),
+  });
+});
+
+app.get("/api/tenants/:slug/conversations", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  const rows = await conversationSummaries(db, tenant.id);
+
+  return c.json({
+    conversations: rows.map((row) => ({
+      ...row,
+      updatedAt: row.updatedAt.toISOString(),
+      lastMessage: row.lastMessage
+        ? { ...row.lastMessage, at: row.lastMessage.at.toISOString() }
+        : null,
+    })),
+  });
+});
+
+app.get("/api/tenants/:slug/conversations/:id", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  const conversation = await getConversationById(db, tenant.id, c.req.param("id"));
+  if (!conversation) return c.json({ error: "unknown conversation" }, 404);
+
+  const rows = await messageThread(db, conversation.id);
+
+  return c.json({
+    conversation: {
+      id: conversation.id,
+      customerName: conversation.customerName,
+      channel: conversation.channel,
+      status: conversation.status,
+      updatedAt: conversation.lastMessageAt.toISOString(),
+    },
+    messages: rows.map((row) => ({
+      id: row.id,
+      role: row.role,
+      text: row.content,
+      at: row.createdAt.toISOString(),
+    })),
+  });
+});
+
+/**
+ * Staff reply. It goes out through the same `Channel.send` the bot uses, so the
+ * customer sees one thread — not a bot and a person talking over each other.
+ * The message is stored before delivery: a failed send must not lose the text.
+ */
+app.post("/api/tenants/:slug/conversations/:id/reply", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  const conversation = await getConversationById(db, tenant.id, c.req.param("id"));
+  if (!conversation) return c.json({ error: "unknown conversation" }, 404);
+
+  const body = (await c.req.json().catch(() => null)) as { text?: string } | null;
+  const text = body?.text?.trim() ?? "";
+  if (text.length === 0) return c.json({ error: "text is required" }, 400);
+  if (text.length > 2000) return c.json({ error: "text is too long" }, 400);
+
+  const message = await appendMessage(db, conversation.id, "staff", text);
+  await setConversationStatus(db, conversation.id, "human");
+
+  const delivery = await deliverTo(conversation.channel, conversation.externalId, text);
+
+  return c.json({
+    message: {
+      id: message.id,
+      role: "staff",
+      text: message.content,
+      at: message.createdAt.toISOString(),
+    },
+    status: "human",
+    ...delivery,
+  });
+});
+
+app.post("/api/tenants/:slug/conversations/:id/takeover", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  const conversation = await getConversationById(db, tenant.id, c.req.param("id"));
+  if (!conversation) return c.json({ error: "unknown conversation" }, 404);
+
+  await setConversationStatus(db, conversation.id, "human");
+  return c.json({ status: "human" });
+});
+
+app.post("/api/tenants/:slug/conversations/:id/handback", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  const conversation = await getConversationById(db, tenant.id, c.req.param("id"));
+  if (!conversation) return c.json({ error: "unknown conversation" }, 404);
+
+  await setConversationStatus(db, conversation.id, "bot");
+  return c.json({ status: "bot" });
+});
+
+/** Telegram: polling locally, webhook in production. */
+const telegramChannel: Channel | null = config.telegram.token
+  ? createTelegramChannel(config.telegram.token)
+  : null;
+
+/**
+ * One outbound door for staff replies, so a human message reaches the same
+ * thread the bot uses. Widget delivery arrives with phase 4.
+ */
+async function deliverTo(
+  channel: "telegram" | "widget" | "whatsapp",
+  externalId: string,
+  text: string,
+): Promise<{ delivered: boolean; error?: string }> {
+  if (channel !== "telegram") {
+    return { delivered: false, error: `no delivery channel for ${channel} yet` };
+  }
+  if (!telegramChannel) {
+    return { delivered: false, error: "telegram is not configured" };
+  }
+
+  try {
+    await telegramChannel.send(externalId, { text, quickReplies: [] });
+    return { delivered: true };
+  } catch (error) {
+    return { delivered: false, error: error instanceof Error ? error.message : "send failed" };
+  }
+}
+
 const telegram = config.telegram.token
   ? createTelegramBot({
       token: config.telegram.token,
@@ -290,6 +451,7 @@ const telegram = config.telegram.token
       db,
       apiKey: config.groqApiKey,
       model: config.llmModel,
+      channel: telegramChannel ?? undefined,
     })
   : null;
 

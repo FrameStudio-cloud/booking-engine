@@ -1,5 +1,6 @@
 import {
   createBooking as persistBooking,
+  findBookingForConversation,
   loadBusyIntervals,
   loadTenantContext,
   resolveService,
@@ -30,6 +31,9 @@ export async function buildAgentPort(
   if (!seed) return null;
 
   const timezone = seed.tenant.timezone;
+  const existing = conversationId
+    ? await findBookingForConversation(db, conversationId)
+    : null;
 
   return {
     tenant: {
@@ -51,6 +55,14 @@ export async function buildAgentPort(
       .filter((r) => r.active)
       .map((r) => ({ id: r.id, name: r.name, capacity: r.capacity })),
     now,
+    existingBooking: existing
+      ? {
+          id: existing.id,
+          serviceName: existing.serviceName,
+          resourceName: existing.resourceName,
+          startsAt: existing.startsAt,
+        }
+      : null,
 
     async findSlots({ service, date, partySize }): Promise<SlotsResult> {
       const scoped = await loadTenantContext(db, slug, date, date);
@@ -157,7 +169,16 @@ export async function buildAgentPort(
 
       if (!outcome.ok) {
         if (outcome.reason === "already_booked") {
-          const local = new Intl.DateTimeFormat("en-GB", {
+          // Give the model the real details: with none, it invents a stylist.
+          const bookedService = scoped.services.find((s) => s.id === outcome.serviceId);
+          const bookedResource = scoped.resources.find((r) => r.id === outcome.resourceId);
+          const when = new Intl.DateTimeFormat("en-GB", {
+            timeZone: timezone,
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+          }).format(outcome.startsAt);
+          const at = new Intl.DateTimeFormat("en-GB", {
             timeZone: timezone,
             hour: "2-digit",
             minute: "2-digit",
@@ -166,7 +187,7 @@ export async function buildAgentPort(
 
           return {
             ok: false,
-            message: `This customer already has a booking at ${local} from this chat. Do not create another one — confirm the existing booking and answer their question.`,
+            message: `This customer already has a booking: ${bookedService?.name ?? "a service"} with ${bookedResource?.name ?? "our team"} on ${when} at ${at}. Do not create another one. Confirm exactly these details and answer their question.`,
           };
         }
 

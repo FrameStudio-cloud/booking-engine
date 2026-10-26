@@ -8,7 +8,7 @@ First product: a demo site (one preset business) that uses the engine via Telegr
 **Phase 3 — Telegram live** (bot polling; first real phone message pending).
 Phase 4 next: the widget talks to the same agent.
 
-Green right now: `pnpm test` (39 passing: 27 core + 6 agent + 6 channels),
+Green right now: `pnpm test` (44 passing: 27 core + 8 agent + 3 reply-guard + 6 channels),
 `pnpm typecheck`, `apps/web` and `apps/widget` build, a live Groq conversation that
 checks availability, quotes **local** times, writes a confirmed booking to Postgres,
 and a Telegram thread that resumes from the database on every message.
@@ -174,6 +174,11 @@ Notes:
 - [ ] Real booking from a phone (first demo moment) — bot is live, waiting for a message
 
 Notes:
+- The model now receives the booking a chat already owns, in the prompt, before
+  it is tempted to book again — the tool guard alone made it invent a stylist
+  name when it tried ("confirmed with Grace" on an Amani booking).
+- Degenerate replies (a live run returned `Good ......`) are replaced with a
+  plain "could you say it again?" instead of reaching the customer.
 - One pipeline, two transports: polling and webhook both call `handleInbound`, so
   behaviour cannot drift between local dev and production.
 - Found live on the first real chat, both fixed and re-tested:
@@ -202,6 +207,9 @@ Notes:
 ## Phase 5 — Dashboard + staff takeover
 
 - [x] `apps/web` shell — built from `WEB-SPEC.md` (mock data, hash router)
+- [x] Read endpoints: `/bookings?date=`, `/conversations`, `/conversations/:id`
+- [x] Staff reply, takeover and handback — replies go out through the same
+      `Channel.send` the bot uses, and are stored before delivery
 - [ ] Auth, tenant switcher
 - [ ] Wire shell mock data to the real API (services / resources / hours / bookings)
 - [ ] Inbox: conversations, `status: bot | needs_human | human`

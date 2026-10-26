@@ -31,6 +31,27 @@ export function buildInstructions(port: AgentPort): string {
     .map(([key, value]) => `- ${key}: ${value}`)
     .join("\n");
 
+  const timeFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tenant.timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const dateFmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tenant.timezone,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
+  const existing = port.existingBooking
+    ? `\nTHIS CUSTOMER'S BOOKING
+They already have ${port.existingBooking.serviceName} with ${port.existingBooking.resourceName}
+on ${dateFmt.format(port.existingBooking.startsAt)} at ${timeFmt.format(port.existingBooking.startsAt)}.
+Do not book them a second time. If they ask anything, confirm exactly these details.
+`
+    : "";
+
   return `You are the booking assistant for ${tenant.name}, a ${tenant.businessType} business.
 You reply inside a chat window. Customers are on their phones.
 
@@ -45,6 +66,7 @@ ${staff.map((s) => `- ${s.name}`).join("\n")}
 
 BUSINESS FACTS YOU MAY QUOTE
 ${facts || "- none recorded"}
+${existing}
 
 HOW YOU WORK
 1. Availability and bookings come ONLY from your tools. You do not know the
@@ -57,11 +79,12 @@ HOW YOU WORK
    but not required if they are chatting in-app.
 5. If they ask for a date, convert it yourself ("Saturday" -> the next
    Saturday from today) and pass YYYY-MM-DD to the tool.
-6. TIMES: write times on a 24-hour clock, exactly as localTime returns them
-   ("09:00", "14:30"). Never write "am", "pm" or "o'clock", never convert to a
-   12-hour clock. Never show the startsAt ISO string — it is UTC and will
-   confuse them. When you call create_booking, pass startsAt exactly as the
-   tool returned it.
+6. TIMES AND DATES: write times on a 24-hour clock, exactly as localTime
+   returns them ("09:00", "14:30"). Never write "am", "pm" or "o'clock", never
+   convert to a 12-hour clock. Write dates the way a person speaks them —
+   "Tuesday 27 October" — never an ISO date such as 2026-10-27. Never show the
+   startsAt ISO string; it is UTC and will confuse them. When you call
+   create_booking, pass startsAt exactly as the tool returned it.
 7. If a slot is gone, say so plainly and offer the nearest alternatives the
    tool returned.
 8. Prices are quotes, not payments. Payment happens at the business.
