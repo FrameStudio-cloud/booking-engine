@@ -10,8 +10,20 @@ First product: a demo site (one preset business) that uses the engine via Telegr
 Green right now: `pnpm test` (27 passing), `pnpm typecheck`, `apps/web` builds,
 `apps/widget` builds (7.5 kB gzip), API answers slots and rejects double bookings.
 
-Blocked on: a Neon database + `DATABASE_URL` before the demo tenant moves
-from an in-memory fixture into Postgres.
+Blocked on: nothing. Database is provisioned; next job is the repository layer
+that moves the demo tenant out of its in-memory fixture.
+
+### Database
+
+| | |
+|---|---|
+| Neon project | `proud-mouse-13812950` (booking-engine) |
+| Region | aws-eu-central-1 — Frankfurt |
+| Postgres | 17 |
+| Branch | `main` (`br-morning-cell-b9r5x1q6`) |
+| Credentials | repo-root `.env` (gitignored) |
+
+Schema applied via `drizzle/0000_brainy_terrax.sql`. Verified: 8 tables, 6 enums.
 
 ---
 
@@ -111,10 +123,11 @@ A new business type is a **config preset**, not a codebase.
 
 ### Phase 1b — persistence (next)
 
-- [ ] Provision Neon, set `DATABASE_URL` / `DATABASE_URL_DIRECT`
-- [ ] `pnpm db:generate` + `db:push`, commit the migration
+- [x] Provision Neon, set `DATABASE_URL` / `DATABASE_URL_DIRECT`
+- [x] `pnpm db:generate` + `db:migrate` — migration `0000_brainy_terrax.sql` applied, committed
 - [ ] `packages/db` repository layer: `loadSlotInput`, `insertBooking` (transaction + row lock)
 - [ ] Swap `apps/api/src/demo.ts` fixture for real queries
+- [ ] Seed script: Glow Salon with staff, services, hours
 - [ ] `cancelBooking` / `rescheduleBooking` in core
 
 
