@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@booking/agent": "workspace:*",
     "@booking/core": "workspace:*",
     "@booking/db": "workspace:*",
     "@booking/shared": "workspace:*",

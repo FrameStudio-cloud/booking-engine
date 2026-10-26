@@ -5,11 +5,11 @@ First product: a demo site (one preset business) that uses the engine via Telegr
 
 ## Status
 
-**Phase 1 — complete** (schema, core, persistence). Phase 2 next: the agent.
+**Phase 2 — complete** (agent + tools). Phase 3 next: real Telegram.
 
-Green right now: `pnpm test` (27 passing), `pnpm typecheck`, `apps/web` builds,
-`apps/widget` builds (7.5 kB gzip), API reads and writes real Postgres rows,
-and four simultaneous writes to one slot yield exactly one `201` and three `409`.
+Green right now: `pnpm test` (33 passing: 27 core + 6 agent), `pnpm typecheck`,
+`apps/web` and `apps/widget` build, and a live Groq conversation that checks
+availability, quotes **local** times, and writes a confirmed booking to Postgres.
 
 ### Parallel work
 
@@ -65,7 +65,7 @@ Schema applied via `drizzle/0000_brainy_terrax.sql`. Verified: 8 tables, 6 enums
 | Web | Vite + React (JSX) + Tailwind v4 | user's preferred stack |
 | Widget | Preact + Shadow DOM, Vite IIFE | tiny bundle, styles can't leak into host site |
 | Telegram | grammY | TS-first, maintained |
-| LLM | Vercel AI SDK (Groq provider) | same Groq, but swappable provider later |
+| LLM | AI SDK 7 + Groq `openai/gpt-oss-120b` | only good tool-caller left on Groq's free tier |
 | Tests | Vitest | availability logic must be tested |
 | Payments | **out of scope for v1** | booking only, pay on arrival |
 | Business model | one engine + config presets | never fork per business type |
@@ -143,10 +143,21 @@ A new business type is a **config preset**, not a codebase.
 
 ## Phase 2 — Agent + tools
 
-- [ ] `packages/agent` — system prompt per tenant, tool defs
-- [ ] Tools: `check_availability`, `create_booking`, `cancel_booking`, `get_info`, `escalate`
-- [ ] Guardrails: never confirm a slot not returned by a tool; confirm before writing
-- [ ] Scripted end-to-end test: "do you have anything Saturday?" → booking row created
+- [x] `packages/agent` — system prompt generated per tenant, tool defs
+- [x] Tools: `check_availability`, `create_booking`, `get_business_info`, `escalate_to_human`
+- [x] Guardrails: `create_booking` refuses any start time the engine never offered
+- [x] Tools return `localTime` (wall clock) alongside UTC `startsAt` — the model
+      quotes local time only, so it cannot tell a customer the wrong hour
+- [x] 6 Vitest cases: invented slot refused, offered slot books, lost race surfaces,
+      bad date recovers, escalation flag set, local time is not UTC
+- [x] `POST /api/tenants/:slug/chat` wired to Postgres via an `AgentPort` adapter
+- [x] Live proof: "anything tomorrow for a trim?" → slot list → "9am, Wanjiku"
+      → booking row with `source: agent`, then a closed-Sunday refusal and an escalation
+
+Notes:
+- `llama-3.3-70b-versatile` was decommissioned on Groq; `openai/gpt-oss-120b` is the
+  current tool-calling model. Groq's free tier only lists 11 models now.
+- History is stateless per request (client sends it). Persistence lands in phase 3.
 
 ## Phase 3 — Telegram channel
 

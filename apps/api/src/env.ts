@@ -22,4 +22,7 @@ export const config = {
   port: Number(process.env.PORT ?? 8787),
   databaseUrl: required("DATABASE_URL"),
   dashboardOrigin: process.env.DASHBOARD_ORIGIN ?? "http://localhost:5173",
+  // Optional: the rest of the API works without it, /chat does not.
+  groqApiKey: process.env.GROQ_API_KEY || undefined,
+  llmModel: process.env.LLM_MODEL || "openai/gpt-oss-120b",
 };

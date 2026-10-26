@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { runAgent } from "@booking/agent";
 import {
   createBooking,
   loadBusyIntervals,
@@ -19,6 +20,7 @@ import {
 import { localDateSchema, type LocalDate } from "@booking/shared";
 import { config } from "./env";
 import { db } from "./db";
+import { buildAgentPort } from "./agent-port";
 
 const app = new Hono();
 
@@ -216,6 +218,65 @@ app.post("/api/tenants/:slug/bookings", async (c) => {
 function padDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 86_400_000);
 }
+
+/**
+ * POST /api/tenants/:slug/chat
+ * Body: { messages: [{ role: "user" | "assistant", content: string }] }
+ * The client owns the history for now; persistence arrives with channels.
+ */
+app.post("/api/tenants/:slug/chat", async (c) => {
+  if (!config.groqApiKey) {
+    return c.json({ error: "chat is not configured: GROQ_API_KEY is missing" }, 503);
+  }
+
+  const body = (await c.req.json().catch(() => null)) as {
+    messages?: Array<{ role?: string; content?: string }>;
+  } | null;
+
+  if (!Array.isArray(body?.messages) || body.messages.length === 0) {
+    return c.json({ error: "messages[] is required" }, 400);
+  }
+
+  const history = body.messages
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .slice(-20)
+    .map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: String(m.content ?? "").trim(),
+    }))
+    .filter((m) => m.content.length > 0);
+
+  if (history.length === 0) return c.json({ error: "no usable messages" }, 400);
+  if (history[history.length - 1]?.role !== "user") {
+    return c.json({ error: "the last message must be from the user" }, 400);
+  }
+
+  const port = await buildAgentPort(db, c.req.param("slug"), new Date());
+  if (!port) return c.json({ error: "unknown tenant" }, 404);
+
+  try {
+    const result = await runAgent(port, history, {
+      model: config.llmModel,
+      apiKey: config.groqApiKey,
+    });
+
+    return c.json({
+      reply: result.text,
+      escalated: result.escalated,
+      bookingId: result.bookingId,
+      toolCalls: result.toolCalls,
+    });
+  } catch (error) {
+    console.error("agent error:", error);
+    return c.json(
+      {
+        error: "The assistant is unavailable right now.",
+        detail: error instanceof Error ? error.message : String(error),
+      },
+      502,
+    );
+  }
+});
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {
   console.log(`booking engine api listening on http://localhost:${info.port}`);
