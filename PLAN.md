@@ -272,6 +272,9 @@ same conversations.
 - [ ] First real deploy (needs the accounts: Render, Telegram webhook)
 - [ ] Dashboard auth before it leaves localhost — it shows customer conversations
 
+Design decisions still open (form bookings from a site, media in chat, price
+drift between page and engine) are written up in `GAPS.md`.
+
 ## Later (explicitly not now)
 
 - [ ] WhatsApp adapter (Baileys or 360Dialog) — same `Channel` interface
