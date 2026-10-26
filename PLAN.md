@@ -11,6 +11,12 @@ Green right now: `pnpm test` (27 passing), `pnpm typecheck`, `apps/web` builds,
 `apps/widget` builds (7.5 kB gzip), API reads and writes real Postgres rows,
 and four simultaneous writes to one slot yield exactly one `201` and three `409`.
 
+### Parallel work
+
+`WEB-SPEC.md` is the contract for a separate agent building the dashboard/site
+shell. It may only touch `apps/web/src/**`. Everything else in this repo stays
+with the engine agent. Read §0 of that file before starting either side.
+
 ### Database
 
 | | |
@@ -159,9 +165,9 @@ A new business type is a **config preset**, not a codebase.
 
 ## Phase 5 — Dashboard + staff takeover
 
-- [ ] `apps/web` — auth, tenant switcher
-- [ ] Services / resources / hours CRUD
-- [ ] Bookings list + calendar
+- [ ] `apps/web` shell — built from `WEB-SPEC.md` by a separate agent
+- [ ] Auth, tenant switcher
+- [ ] Wire shell mock data to the real API (services / resources / hours / bookings)
 - [ ] Inbox: conversations, `status: bot | needs_human | human`
 - [ ] Human reply goes out through `Channel.send` (same path as bot)
 
