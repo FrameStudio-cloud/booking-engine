@@ -107,7 +107,46 @@ DASHBOARD_ORIGIN=http://localhost:5173
 Never ship `.env`, and never put the model key in the widget — the widget only
 ever talks to your API.
 
-## 4. When you add a feature
+## 4. Deploy
+
+One web service is enough. It builds the widget, then serves the API *and* the
+bundle, so the snippet you hand a customer points at that single host.
+
+`render.yaml` is a Render blueprint for exactly this: Frankfurt (closest to
+Kenya), `pnpm start` as the start command, `/api/health` as the health check.
+
+1. Push the repo to GitHub.
+2. Render → **New → Blueprint** → pick the repo. It reads `render.yaml`.
+3. Fill the secret env vars it asks for: `DATABASE_URL` (Neon pooled),
+   `GROQ_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`,
+   `DASHBOARD_ORIGIN`.
+4. Deploy. Then check `https://YOUR-APP.onrender.com/api/health`.
+5. Point Telegram at the webhook (webhook mode is already set):
+
+```
+https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://YOUR-APP.onrender.com/webhooks/telegram/<SECRET>
+```
+
+Production snippet for a customer site — one line, that host:
+
+```html
+<script src="https://YOUR-APP.onrender.com/widget.js" data-tenant="glow-salon"></script>
+```
+
+Notes that will bite:
+
+- **Free instances sleep.** The first message after idle can take ~30s while the
+  instance wakes. Fine for a demo, not for a paying salon; the cheapest paid
+  instance stays warm.
+- **`TELEGRAM_MODE=webhook` in production.** Polling needs a long-lived process.
+- **Two origins, one CORS rule.** `DASHBOARD_ORIGIN` must be the dashboard's real
+  origin or its requests are refused. Widget routes answer any origin by design
+  and are safe to expose — they only speak to one tenant's own data.
+- The dashboard is a staff tool. Host it separately (Vercel/Netlify static) or
+  leave it local until auth exists; without auth anyone with the URL can read the
+  inbox.
+
+## 5. When you add a feature
 
 Add it to the engine, deploy the API, and every customer site has it. Rebuild the
 widget bundle only when the widget's own behaviour changes — not when a customer

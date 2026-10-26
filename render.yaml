@@ -1,0 +1,33 @@
+# Deploy blueprint for Render (https://render.com/docs/blueprint-spec).
+#
+# One web service. It builds the widget bundle, then serves the API — which also
+# serves /widget.js, so the snippet you paste into a customer site points here.
+services:
+  - type: web
+    name: booking-engine-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @booking/widget build
+    startCommand: pnpm --filter @booking/api start
+    healthCheckPath: /api/health
+    envVars:
+      # Set these in the dashboard; never commit them.
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
+      - key: DASHBOARD_ORIGIN
+        sync: false
+      # Webhook mode in production: polling needs a long-lived process, and a
+      # free instance sleeps. Register the webhook after the first deploy.
+      - key: TELEGRAM_MODE
+        value: webhook
+      - key: TELEGRAM_TENANT_SLUG
+        value: glow-salon
+      - key: NODE_ENV
+        value: production

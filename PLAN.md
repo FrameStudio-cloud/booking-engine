@@ -262,6 +262,16 @@ same conversations.
       but rooms-per-night and table-plus-party still need their slot strategies
       proven before they are advertised
 
+## Phase 7 — Ship
+
+- [x] `pnpm start` — builds the widget, then serves API + bundle on one host
+- [x] `render.yaml` — Frankfurt web service, `/api/health` health check,
+      webhook mode, secrets marked `sync: false`
+- [x] Verified locally: `PORT=8790 pnpm start` serves `/api/health`, `/widget.js`
+      and a tenant config from one origin
+- [ ] First real deploy (needs the accounts: Render, Telegram webhook)
+- [ ] Dashboard auth before it leaves localhost — it shows customer conversations
+
 ## Later (explicitly not now)
 
 - [ ] WhatsApp adapter (Baileys or 360Dialog) — same `Channel` interface
