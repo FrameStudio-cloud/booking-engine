@@ -189,3 +189,88 @@ export const outboundMessageSchema = z.object({
   quickReplies: z.array(z.string()).default([]),
 });
 export type OutboundMessage = z.infer<typeof outboundMessageSchema>;
+
+// ---------------------------------------------------------------------------
+// Tenant config — the file a new business starts from.
+//
+// One JSON file per business: who they are, what they sell, who works, when
+// they open. `pnpm tenant:new presets/glow-salon.json` turns it into rows.
+// ---------------------------------------------------------------------------
+
+export const openingHoursSchema = z.object({
+  weekday: weekdaySchema,
+  opensAt: timeOfDaySchema,
+  closesAt: timeOfDaySchema,
+});
+export type OpeningHours = z.infer<typeof openingHoursSchema>;
+
+export const tenantConfigServiceSchema = z.object({
+  name: z.string().min(1).max(80),
+  durationMinutes: z.number().int().positive().max(24 * 60),
+  capacity: z.number().int().positive().default(1),
+  bufferBeforeMinutes: z.number().int().nonnegative().default(0),
+  priceMinor: z.number().int().nonnegative().default(0),
+});
+export type TenantConfigService = z.infer<typeof tenantConfigServiceSchema>;
+
+export const tenantConfigResourceSchema = z.object({
+  kind: resourceKindSchema,
+  name: z.string().min(1).max(80),
+  capacity: z.number().int().positive().default(1),
+});
+export type TenantConfigResource = z.infer<typeof tenantConfigResourceSchema>;
+
+export const tenantConfigSchema = z.object({
+  slug: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/, "lowercase letters, digits and dashes"),
+  name: z.string().min(2).max(80),
+  businessType: businessTypeSchema,
+  timezone: z.string().default("Africa/Nairobi"),
+  currency: z.string().min(1).max(8).default("KES"),
+
+  /** What the widget wears. Values land in `tenants.settings`, not the prompt. */
+  brand: z
+    .object({
+      accent: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/, "hex colour like #a4502a")
+        .default("#111111"),
+      position: z.enum(["left", "right"]).default("right"),
+    })
+    .default({ accent: "#111111", position: "right" }),
+
+  widget: z
+    .object({
+      greeting: z
+        .string()
+        .min(1)
+        .max(200)
+        .default("Hi — I can check what's free and hold a spot for you. What are you after?"),
+      replyTime: z.string().min(1).max(60).default("Usually replies instantly"),
+    })
+    .default({
+      greeting: "Hi — I can check what's free and hold a spot for you. What are you after?",
+      replyTime: "Usually replies instantly",
+    }),
+
+  /** Facts the agent may quote: address, parking, payment, policies. */
+  facts: z.record(z.string(), z.string()).default({}),
+
+  services: z.array(tenantConfigServiceSchema).min(1),
+  resources: z.array(tenantConfigResourceSchema).min(1),
+  hours: z.array(openingHoursSchema).min(1),
+
+  /** Optional pre-existing booking, so a fresh demo has something to work around. */
+  demoBooking: z
+    .object({
+      service: z.string(),
+      resource: z.string(),
+      dayOffset: z.number().int().min(0).max(30).default(1),
+      startsAt: timeOfDaySchema,
+      customerName: z.string().min(1),
+      source: z.enum(["telegram", "widget", "whatsapp"]).default("telegram"),
+    })
+    .optional(),
+});
+export type TenantConfig = z.infer<typeof tenantConfigSchema>;

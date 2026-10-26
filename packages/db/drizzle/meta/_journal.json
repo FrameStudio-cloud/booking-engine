@@ -15,6 +15,13 @@
       "when": 1792992858181,
       "tag": "0001_bouncy_absorbing_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792997826787,
+      "tag": "0002_little_mastermind",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,14 @@ import { useEffect, useRef, useState } from "preact/hooks";
 const GREETING =
   "Hi — I can check what's free and hold a spot for you. What are you after?";
 
+const DEFAULT_CONFIG = {
+  businessName: "Bookings",
+  greeting: GREETING,
+  replyTime: "Usually replies instantly",
+  accent: "#111111",
+  position: "right",
+};
+
 const SESSION_RE = /^[A-Za-z0-9_-]{8,128}$/;
 
 function sessionId(tenantSlug) {
@@ -36,7 +44,7 @@ const timeLabel = (iso) =>
     ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "";
 
-export function Widget({ tenantSlug, apiBase, businessName = "Glow Salon" }) {
+export function Widget({ tenantSlug, apiBase }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,6 +52,7 @@ export function Widget({ tenantSlug, apiBase, businessName = "Glow Salon" }) {
   const [messages, setMessages] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
 
   const logRef = useRef(null);
   const inputRef = useRef(null);
@@ -51,6 +60,26 @@ export function Widget({ tenantSlug, apiBase, businessName = "Glow Salon" }) {
 
   const url = (path) => `${apiBase}${path}`;
   const base = () => url(`/api/tenants/${tenantSlug}/widget/messages`);
+
+  // Branding lives on the tenant, not in this bundle: one widget version
+  // serves every customer, and a new customer needs no rebuild.
+  useEffect(() => {
+    let alive = true;
+
+    fetch(url(`/api/tenants/${tenantSlug}/widget/config`))
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((data) => {
+        if (!alive) return;
+        setConfig({ ...DEFAULT_CONFIG, ...data });
+      })
+      .catch(() => {
+        // Unreachable engine: keep the neutral defaults.
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [tenantSlug]);
 
   useEffect(() => {
     const el = logRef.current;
@@ -135,26 +164,31 @@ export function Widget({ tenantSlug, apiBase, businessName = "Glow Salon" }) {
   }
 
   return (
-    <div class="bw-root">
+    <div
+      class={`bw-root${config.position === "left" ? " bw-left" : ""}`}
+      style={{ "--bw-accent": config.accent }}
+    >
       {open && (
         <div
           class="bw-panel"
           role="dialog"
-          aria-label={`Chat with ${businessName}`}
+          aria-label={`Chat with ${config.businessName}`}
           onKeyDown={(event) => {
             if (event.key === "Escape") setOpen(false);
           }}
         >
           <div class="bw-head">
-            {businessName}
-            <small>{status === "human" ? "A team member is replying" : "Usually replies instantly"}</small>
+            {config.businessName}
+            <small>
+              {status === "human" ? "A team member is replying" : config.replyTime}
+            </small>
             <button class="bw-close" onClick={() => setOpen(false)} aria-label="Close chat">
               ×
             </button>
           </div>
 
           <div class="bw-log" ref={logRef} role="log" aria-live="polite">
-            <div class="bw-msg assistant">{GREETING}</div>
+            <div class="bw-msg assistant">{config.greeting}</div>
 
             {messages.map((m) => (
               <div key={m.id} class={`bw-msg ${m.role === "user" ? "user" : "assistant"}`}>

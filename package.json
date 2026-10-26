@@ -16,6 +16,7 @@
     "db:generate": "pnpm --filter @booking/db generate",
     "db:migrate": "pnpm --filter @booking/db migrate",
     "db:seed": "pnpm --filter @booking/db seed",
+    "tenant:new": "pnpm --filter @booking/db tenant:new",
     "db:push": "pnpm --filter @booking/db push",
     "db:studio": "pnpm --filter @booking/db studio"
   }

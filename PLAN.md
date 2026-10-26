@@ -239,9 +239,18 @@ same conversations.
 
 ## Phase 6 — Presets + demo site
 
-- [ ] `presets/salon.json`, `presets/bnb.json`, `presets/restaurant.json`
-- [ ] Seed script: one demo business end-to-end
+- [x] Tenant config schema (`tenantConfigSchema`) — one JSON file per business
+- [x] `pnpm tenant:new presets/x.json` — validates and provisions from the file
+- [x] `pnpm db:seed` — the demo business, from `presets/glow-salon.json`
+- [x] Per-tenant branding: accent, corner, greeting, header text read from
+      `tenants.settings`, so one widget build serves every customer
+- [x] Second business provisioned from config alone (`fade-factory`) — same
+      engine, own services, hours and prices
+- [x] `INSTALL.md` — the copy-paste story
 - [x] Demo site with the widget live — `examples/glow-salon` (one script tag)
+- [ ] `presets/bnb.json`, `presets/restaurant.json` — the configs exist in shape,
+      but rooms-per-night and table-plus-party still need their slot strategies
+      proven before they are advertised
 
 ## Later (explicitly not now)
 

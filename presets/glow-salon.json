@@ -1,0 +1,72 @@
+{
+  "slug": "glow-salon",
+  "name": "Glow Salon",
+  "businessType": "salon",
+  "timezone": "Africa/Nairobi",
+  "currency": "KES",
+
+  "brand": {
+    "accent": "#a4502a",
+    "position": "right"
+  },
+
+  "widget": {
+    "greeting": "Hi — I can check what's free and hold a spot for you. What are you after?",
+    "replyTime": "Usually replies instantly"
+  },
+
+  "facts": {
+    "address": "2nd floor, Thika Arcade, Mama Ngina Drive, Thika",
+    "parking": "Free parking behind the building after 5pm",
+    "payment": "Cash, M-Pesa or card at the salon",
+    "late": "Please arrive 5 minutes early. Over 15 minutes late we may shorten the service.",
+    "children": "Children are welcome, but please tell us so we book enough time."
+  },
+
+  "services": [
+    {
+      "name": "Braiding",
+      "durationMinutes": 120,
+      "capacity": 1,
+      "bufferBeforeMinutes": 15,
+      "priceMinor": 250000
+    },
+    {
+      "name": "Wash and blow-dry",
+      "durationMinutes": 60,
+      "capacity": 1,
+      "bufferBeforeMinutes": 10,
+      "priceMinor": 120000
+    },
+    {
+      "name": "Trim",
+      "durationMinutes": 45,
+      "capacity": 1,
+      "bufferBeforeMinutes": 5,
+      "priceMinor": 80000
+    }
+  ],
+
+  "resources": [
+    { "kind": "staff", "name": "Grace", "capacity": 1 },
+    { "kind": "staff", "name": "Amani", "capacity": 1 }
+  ],
+
+  "hours": [
+    { "weekday": 1, "opensAt": "09:00", "closesAt": "18:00" },
+    { "weekday": 2, "opensAt": "09:00", "closesAt": "18:00" },
+    { "weekday": 3, "opensAt": "09:00", "closesAt": "18:00" },
+    { "weekday": 4, "opensAt": "09:00", "closesAt": "18:00" },
+    { "weekday": 5, "opensAt": "09:00", "closesAt": "18:00" },
+    { "weekday": 6, "opensAt": "09:00", "closesAt": "18:00" }
+  ],
+
+  "demoBooking": {
+    "service": "Braiding",
+    "resource": "Grace",
+    "dayOffset": 1,
+    "startsAt": "11:00",
+    "customerName": "Wanjiku",
+    "source": "telegram"
+  }
+}

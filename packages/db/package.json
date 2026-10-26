@@ -14,7 +14,8 @@
     "migrate": "drizzle-kit migrate",
     "push": "drizzle-kit push",
     "studio": "drizzle-kit studio",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "tenant:new": "tsx src/cli/create-tenant.ts"
   },
   "dependencies": {
     "@booking/core": "workspace:*",

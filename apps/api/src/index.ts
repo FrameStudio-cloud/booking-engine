@@ -436,6 +436,23 @@ app.post("/api/tenants/:slug/conversations/:id/handback", async (c) => {
  */
 const SESSION_RE = /^[A-Za-z0-9_-]{8,128}$/;
 
+app.get("/api/tenants/:slug/widget/config", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  const settings = tenant.settings ?? {};
+
+  return c.json({
+    businessName: tenant.name,
+    greeting:
+      settings.widget?.greeting ??
+      "Hi — I can check what's free and hold a spot for you. What are you after?",
+    replyTime: settings.widget?.replyTime ?? "Usually replies instantly",
+    accent: settings.brand?.accent ?? "#111111",
+    position: settings.brand?.position ?? "right",
+  });
+});
+
 app.post("/api/tenants/:slug/widget/messages", async (c) => {
   if (!config.groqApiKey) {
     return c.json({ error: "chat is not configured: GROQ_API_KEY is missing" }, 503);

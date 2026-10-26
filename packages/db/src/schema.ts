@@ -63,6 +63,17 @@ export const tenants = pgTable(
       .$type<Record<string, string>>()
       .notNull()
       .default(sql`'{}'::jsonb`),
+    /**
+     * Machine settings — widget branding, channel handles. Deliberately kept
+     * out of `facts` so the model never reads colours as business policy.
+     */
+    settings: jsonb("settings")
+      .$type<{
+        brand?: { accent?: string; position?: "left" | "right" };
+        widget?: { greeting?: string; replyTime?: string };
+      }>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

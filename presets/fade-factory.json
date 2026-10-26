@@ -1,0 +1,62 @@
+{
+  "slug": "fade-factory",
+  "name": "Fade Factory",
+  "businessType": "salon",
+  "timezone": "Africa/Nairobi",
+  "currency": "KES",
+
+  "brand": {
+    "accent": "#1f4d3d",
+    "position": "left"
+  },
+
+  "widget": {
+    "greeting": "Fade Factory here. Ask about a cut, a shave, or today's queue.",
+    "replyTime": "Replies in a minute or two"
+  },
+
+  "facts": {
+    "address": "Shop 4, Kenyatta Highway, Thika",
+    "payment": "M-Pesa only, no cards",
+    "parking": "Street parking in front",
+    "walkins": "Walk-ins welcome before 11am, after that it is bookings first"
+  },
+
+  "services": [
+    {
+      "name": "Skin fade",
+      "durationMinutes": 40,
+      "capacity": 1,
+      "bufferBeforeMinutes": 5,
+      "priceMinor": 70000
+    },
+    {
+      "name": "Beard trim",
+      "durationMinutes": 20,
+      "capacity": 1,
+      "bufferBeforeMinutes": 0,
+      "priceMinor": 30000
+    },
+    {
+      "name": "Cut and beard",
+      "durationMinutes": 60,
+      "capacity": 1,
+      "bufferBeforeMinutes": 5,
+      "priceMinor": 90000
+    }
+  ],
+
+  "resources": [
+    { "kind": "staff", "name": "Brian", "capacity": 1 },
+    { "kind": "staff", "name": "Kevin", "capacity": 1 }
+  ],
+
+  "hours": [
+    { "weekday": 2, "opensAt": "10:00", "closesAt": "20:00" },
+    { "weekday": 3, "opensAt": "10:00", "closesAt": "20:00" },
+    { "weekday": 4, "opensAt": "10:00", "closesAt": "20:00" },
+    { "weekday": 5, "opensAt": "10:00", "closesAt": "20:00" },
+    { "weekday": 6, "opensAt": "10:00", "closesAt": "20:00" },
+    { "weekday": 0, "opensAt": "11:00", "closesAt": "17:00" }
+  ]
+}

@@ -9,13 +9,23 @@
   color: #111;
 }
 
+.bw-left {
+  left: 20px;
+  right: auto;
+}
+
+.bw-left .bw-panel {
+  left: 0;
+  right: auto;
+}
+
 .bw-bubble {
   width: 52px;
   height: 52px;
   border-radius: 999px;
   border: 0;
   cursor: pointer;
-  background: #111;
+  background: var(--bw-accent, #111);
   color: #fff;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   display: grid;
@@ -106,7 +116,7 @@
 
 .bw-msg.user {
   align-self: flex-end;
-  background: #111;
+  background: var(--bw-accent, #111);
   color: #fff;
 }
 
@@ -185,7 +195,7 @@
 .bw-form button {
   border: 0;
   border-radius: 9px;
-  background: #111;
+  background: var(--bw-accent, #111);
   color: #fff;
   padding: 0 14px;
   font: inherit;
