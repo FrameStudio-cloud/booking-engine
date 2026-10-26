@@ -1,4 +1,6 @@
 // TypeTable.jsx — business-type table (§5.6).
+import Pill from "./Pill.jsx";
+
 export default function TypeTable() {
   const rows = [
     { type: "Salon", slot: "staff × service × time", status: "Demo" },

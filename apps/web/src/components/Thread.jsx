@@ -1,7 +1,8 @@
 // Thread.jsx — message bubbles (§6.5).
-export default function Thread({ messages, staffName = "Grace" }) {
-  const timeLabel = (iso) =>
-    new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+import { formatTime } from "../api.js";
+
+export default function Thread({ messages, staffName = "Staff" }) {
+  const timeLabel = (iso) => formatTime(iso);
 
   return (
     <div role="log" aria-live="polite" className="space-y-4">

@@ -1,22 +1,65 @@
-// TodayPage.jsx — /dashboard (§6.3).
-import { todayIso, bookings as allBookings, stats, EMPTY_TODAY } from "../mock.js";
+// TodayPage.jsx — /dashboard (§6.3) on live engine data.
+import { useMemo } from "react";
+import {
+  computeStats,
+  getBookings,
+  getConversations,
+  getTenant,
+  localDate,
+  useAsync,
+} from "../api.js";
 import StatStrip from "./StatStrip.jsx";
 import Timeline from "./Timeline.jsx";
-
-const todayBookings = allBookings.filter((b) => b.startsAt.slice(0, 10) === todayIso);
+import Skeleton from "./Skeleton.jsx";
+import EmptyState from "./EmptyState.jsx";
+import EngineOffline from "./EngineOffline.jsx";
 
 export default function TodayPage() {
+  const today = useMemo(() => localDate(), []);
+
+  const bookingsQ = useAsync(() => getBookings(today), [today]);
+  const conversationsQ = useAsync(getConversations, []);
+  const tenantQ = useAsync(getTenant, []);
+
+  const staff = tenantQ.data?.resources?.filter((r) => r.active) ?? [];
+  const bookings = bookingsQ.data?.bookings ?? [];
+  const conversations = conversationsQ.data?.conversations ?? [];
+
+  const stats = computeStats({
+    bookings,
+    conversations,
+    staffCount: staff.length,
+  });
+
+  const failed = bookingsQ.error || conversationsQ.error || tenantQ.error;
+
+  if (failed) {
+    return (
+      <EngineOffline
+        onRetry={() => {
+          bookingsQ.retry();
+          conversationsQ.retry();
+          tenantQ.retry();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-8">
-      <StatStrip />
+      <StatStrip stats={stats} loading={bookingsQ.loading || conversationsQ.loading} />
 
-      {EMPTY_TODAY ? (
-        <div className="rounded-[14px] border border-ink/10 bg-white/60 p-12 text-center">
-          <p className="text-base text-ink/60">No bookings today. The day is open.</p>
-          <p className="mt-2 text-sm text-ink/40">The bot is still answering.</p>
-        </div>
+      {bookingsQ.loading || tenantQ.loading ? (
+        <Skeleton variant="rows" count={3} />
+      ) : bookings.length === 0 ? (
+        <EmptyState
+          eyebrow="Today"
+          title="No bookings yet today."
+          body="When a customer messages, the booking appears here."
+          action={{ label: "Open the inbox", href: "#/dashboard/inbox" }}
+        />
       ) : (
-        <Timeline bookings={todayBookings} />
+        <Timeline bookings={bookings} staff={staff} />
       )}
 
       {stats.unanswered > 0 && (

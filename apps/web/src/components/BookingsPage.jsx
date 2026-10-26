@@ -1,32 +1,51 @@
-// BookingsPage.jsx — /dashboard/bookings (§6.4).
-import { useState } from "react";
-import { todayIso, tomorrowIso, bookings as allBookings, formatDate } from "../mock.js";
+// BookingsPage.jsx — /dashboard/bookings (§6.4) on live engine data.
+import { useMemo, useState } from "react";
+import {
+  formatDate,
+  getBookings,
+  getTenant,
+  localDate,
+  shiftDay,
+  useAsync,
+} from "../api.js";
 import Timeline from "./Timeline.jsx";
-
-const dayIsoFromOffset = (offset) => {
-  const d = new Date(todayIso);
-  d.setUTCDate(d.getUTCDate() + offset);
-  return d.toISOString().slice(0, 10);
-};
+import Skeleton from "./Skeleton.jsx";
+import EmptyState from "./EmptyState.jsx";
+import EngineOffline from "./EngineOffline.jsx";
 
 export default function BookingsPage() {
   const [offset, setOffset] = useState(0);
-  const date = dayIsoFromOffset(offset);
-  const bookings = allBookings.filter((b) => b.startsAt.slice(0, 10) === date);
+  const date = useMemo(() => shiftDay(localDate(), offset), [offset]);
+
+  const bookingsQ = useAsync(() => getBookings(date), [date]);
+  const tenantQ = useAsync(getTenant, []);
+
+  const staff = tenantQ.data?.resources?.filter((r) => r.active) ?? [];
+  const bookings = bookingsQ.data?.bookings ?? [];
+
+  if (bookingsQ.error || tenantQ.error) {
+    return (
+      <EngineOffline
+        onRetry={() => {
+          bookingsQ.retry();
+          tenantQ.retry();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <button
           onClick={() => setOffset((o) => o - 1)}
-          disabled={offset <= -1}
           className="rounded-lg border border-ink/10 px-3 py-2 text-[0.875rem] font-medium text-ink/60 disabled:text-ink/20 disabled:border-transparent disabled:cursor-not-allowed"
           aria-label="Previous day"
         >
           ‹
         </button>
         <span className="font-mono tabular-nums text-[0.875rem] font-semibold text-ink min-w-[120px] text-center">
-          {formatDate(date)}
+          {formatDate(`${date}T12:00:00+03:00`)}
         </span>
         <button
           onClick={() => setOffset((o) => o + 1)}
@@ -35,21 +54,27 @@ export default function BookingsPage() {
         >
           ›
         </button>
-        <span className="ml-auto text-[0.75rem] text-ink/40">State only, no persistence</span>
+        {offset !== 0 && (
+          <button
+            onClick={() => setOffset(0)}
+            className="text-[0.75rem] font-medium text-ink/60 underline underline-offset-2 hover:text-ink"
+          >
+            Today
+          </button>
+        )}
       </div>
 
-      {bookings.length === 0 ? (
-        <div className="rounded-[14px] border border-ink/10 bg-white/60 p-12 text-center">
-          <p className="text-base text-ink/60">Nothing booked. The bot is still answering.</p>
-          <a
-            href="#/dashboard"
-            className="mt-4 inline-block text-sm font-medium text-ink underline underline-offset-2 hover:text-ink/60"
-          >
-            Back to Today
-          </a>
-        </div>
+      {bookingsQ.loading || tenantQ.loading ? (
+        <Skeleton variant="table" count={5} />
+      ) : bookings.length === 0 ? (
+        <EmptyState
+          eyebrow={formatDate(`${date}T12:00:00+03:00`)}
+          title="Nothing booked this day."
+          body="The bot is still answering. Slots stay open until someone takes them."
+          action={{ label: "Back to today", href: "#/dashboard" }}
+        />
       ) : (
-        <Timeline bookings={bookings} />
+        <Timeline bookings={bookings} staff={staff} />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Header from "./components/Header.jsx";
 import Hero from "./components/Hero.jsx";
 import Section from "./components/Section.jsx";
@@ -12,13 +12,16 @@ import TodayPage from "./components/TodayPage.jsx";
 import BookingsPage from "./components/BookingsPage.jsx";
 import InboxPage from "./components/InboxPage.jsx";
 import SetupPage from "./components/SetupPage.jsx";
+import StatesPreview from "./components/StatesPreview.jsx";
 
 // Copied verbatim from the current App.jsx (§4 rule 4 — the only network call).
 function useEngineHealth() {
   const [health, setHealth] = useState(null);
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     let alive = true;
+    setHealth(null);
     fetch("/api/health")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((data) => alive && setHealth(data))
@@ -26,13 +29,14 @@ function useEngineHealth() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [nonce]);
 
-  return health;
+  const retry = useCallback(() => setNonce((n) => n + 1), []);
+  return { health, retry };
 }
 
 export default function App() {
-  const health = useEngineHealth();
+  const { health, retry } = useEngineHealth();
 
   // ~25 line hash router (§6.1)
   const [route, setRoute] = useState(() => window.location.hash.slice(1) || "/");
@@ -55,6 +59,9 @@ export default function App() {
   } else if (route === "dashboard/setup") {
     dashTitle = "Setup";
     dashPage = <SetupPage />;
+  } else if (route === "dashboard/states") {
+    dashTitle = "States";
+    dashPage = <StatesPreview />;
   }
 
   const inboxId = route.startsWith("dashboard/inbox/")
@@ -135,6 +142,7 @@ export default function App() {
           title={dashTitle}
           route={route}
           health={health}
+          onRetry={retry}
         >
           {route === "dashboard/inbox" || route.startsWith("dashboard/inbox/")
             ? <InboxPage initialId={inboxId} />

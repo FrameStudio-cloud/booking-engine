@@ -21,6 +21,7 @@ export interface BookingListItem {
   id: string;
   serviceId: string;
   serviceName: string;
+  priceMinor: number;
   resourceId: string;
   resourceName: string;
   startsAt: Date;
@@ -41,6 +42,7 @@ export async function listBookings(
       id: bookings.id,
       serviceId: bookings.serviceId,
       serviceName: services.name,
+      priceMinor: services.priceMinor,
       resourceId: bookings.resourceId,
       resourceName: resources.name,
       startsAt: bookings.startsAt,
@@ -130,6 +132,7 @@ export async function findBookingForConversation(
       id: bookings.id,
       serviceId: bookings.serviceId,
       serviceName: services.name,
+      priceMinor: services.priceMinor,
       resourceId: bookings.resourceId,
       resourceName: resources.name,
       startsAt: bookings.startsAt,

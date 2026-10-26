@@ -60,6 +60,7 @@ app.get("/api/tenants/:slug", async (c) => {
     tenant: context.tenant,
     services: context.services,
     resources: context.resources,
+    rules: context.rules,
   });
 });
 

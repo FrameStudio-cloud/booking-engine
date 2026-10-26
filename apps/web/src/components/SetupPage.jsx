@@ -1,31 +1,29 @@
-// SetupPage.jsx — /dashboard/setup (§6.6).
+// SetupPage.jsx — /dashboard/setup (§6.6) on live engine data.
 import { useState } from "react";
-import { staff, services, hours } from "../mock.js";
-import { formatKES } from "../mock.js";
+import { formatKES, getTenant, useAsync } from "../api.js";
 import SetupBlock from "./SetupBlock.jsx";
+import Skeleton from "./Skeleton.jsx";
+import EngineOffline from "./EngineOffline.jsx";
 
-const staffServiceCount = staff.map((s) => ({
-  ...s,
-  services: services.filter((sv) => {
-    if (s.name === "Grace") return sv.id === "svc-braiding";
-    return sv.id === "svc-wash" || sv.id === "svc-trim";
-  }).length,
-}));
-
-const serviceStaff = {
-  "svc-braiding": "Grace",
-  "svc-wash": "Amani",
-  "svc-trim": "Amani",
-};
-
-const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const snippet = `<script src="https://your-domain/widget.js"
         data-tenant="glow-salon"
         data-api="https://api.your-domain.com"></script>`;
 
 export default function SetupPage() {
+  const tenantQ = useAsync(getTenant, []);
   const [copied, setCopied] = useState(false);
+
+  const services = tenantQ.data?.services?.filter((s) => s.active) ?? [];
+  const resources = tenantQ.data?.resources?.filter((r) => r.active) ?? [];
+  const rules = tenantQ.data?.rules ?? [];
+
+  const hoursFor = (weekday) => {
+    const rows = rules.filter((r) => r.weekday === weekday && !r.resourceId);
+    if (rows.length === 0) return "Closed";
+    return rows.map((r) => `${r.opensAt} – ${r.closesAt}`).join(", ");
+  };
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(snippet);
@@ -33,36 +31,46 @@ export default function SetupPage() {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  if (tenantQ.error) {
+    return <EngineOffline onRetry={tenantQ.retry} />;
+  }
+
   return (
     <div className="space-y-6">
       <SetupBlock title="Services">
-        <div className="divide-y divide-ink/10">
-          {services.map((svc) => (
-            <div key={svc.id} className="px-4 py-4 flex items-center justify-between last:pb-0">
-              <div className="flex-1">
-                <p className="font-medium text-ink">{svc.name}</p>
-                <p className="text-[0.75rem] text-ink/40">
-                  {serviceStaff[svc.id]} • {svc.durationMinutes} min • buffer {svc.bufferBeforeMinutes} min
+        {tenantQ.loading ? (
+          <div className="p-4">
+            <Skeleton variant="rows" count={3} />
+          </div>
+        ) : (
+          <div className="divide-y divide-ink/10">
+            {services.map((svc) => (
+              <div key={svc.id} className="px-4 py-4 flex items-center justify-between last:pb-0">
+                <div className="flex-1">
+                  <p className="font-medium text-ink">{svc.name}</p>
+                  <p className="text-[0.75rem] text-ink/40">
+                    {svc.durationMinutes} min · buffer {svc.bufferBeforeMinutes} min
+                  </p>
+                </div>
+                <p className="font-mono tabular-nums text-[0.875rem] text-ink">
+                  KES {formatKES(svc.priceMinor)}
                 </p>
               </div>
-              <p className="font-mono tabular-nums text-[0.875rem] text-ink">
-                KES {formatKES(svc.priceMinor)}
-              </p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </SetupBlock>
 
-      <SetupBlock title="Staff">
+      <SetupBlock title="People and units">
         <div className="divide-y divide-ink/10">
-          {staffServiceCount.map((s) => (
-            <div key={s.id} className="px-4 py-4 flex items-center justify-between last:pb-0">
+          {resources.map((person) => (
+            <div key={person.id} className="px-4 py-4 flex items-center justify-between last:pb-0">
               <div className="flex-1">
-                <p className="font-medium text-ink">{s.name}</p>
-                <p className="text-[0.75rem] text-ink/40">{s.kind}</p>
+                <p className="font-medium text-ink">{person.name}</p>
+                <p className="text-[0.75rem] text-ink/40">{person.kind}</p>
               </div>
               <p className="font-mono tabular-nums text-[0.875rem] text-ink">
-                {s.services} service{s.services !== 1 ? "s" : ""}
+                capacity {person.capacity}
               </p>
             </div>
           ))}
@@ -71,11 +79,11 @@ export default function SetupPage() {
 
       <SetupBlock title="Hours">
         <div className="divide-y divide-ink/10">
-          {days.map((day, i) => (
+          {days.map((day, weekday) => (
             <div key={day} className="px-4 py-4 flex items-center justify-between last:pb-0">
               <p className="font-medium text-ink">{day}</p>
               <p className="font-mono tabular-nums text-[0.875rem] text-ink">
-                {i === 6 ? "Closed" : "09:00 – 18:00"}
+                {hoursFor(weekday)}
               </p>
             </div>
           ))}
