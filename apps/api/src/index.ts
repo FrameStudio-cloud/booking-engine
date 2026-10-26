@@ -21,6 +21,7 @@ import { localDateSchema, type LocalDate } from "@booking/shared";
 import { config } from "./env";
 import { db } from "./db";
 import { buildAgentPort } from "./agent-port";
+import { createTelegramBot } from "./telegram";
 
 const app = new Hono();
 
@@ -278,6 +279,48 @@ app.post("/api/tenants/:slug/chat", async (c) => {
   }
 });
 
+/**
+ * Telegram: polling locally, webhook in production.
+ * Both routes feed the same `handleInbound` pipeline.
+ */
+const telegram = config.telegram.token
+  ? createTelegramBot({
+      token: config.telegram.token,
+      tenantSlug: config.telegram.tenantSlug,
+      db,
+      apiKey: config.groqApiKey,
+      model: config.llmModel,
+    })
+  : null;
+
+if (telegram && config.telegram.mode === "webhook") {
+  app.post("/webhooks/telegram/:secret", async (c) => {
+    if (c.req.param("secret") !== config.telegram.webhookSecret) {
+      return c.json({ error: "forbidden" }, 403);
+    }
+
+    const update = await c.req.json().catch(() => null);
+    if (!update) return c.json({ error: "bad update" }, 400);
+
+    await telegram.bot.handleUpdate(update);
+    return c.json({ ok: true });
+  });
+}
+
+if (telegram && config.telegram.mode === "polling") {
+  telegram.bot
+    .start({
+      drop_pending_updates: true,
+      onStart: (info) => {
+        console.log(`telegram bot @${info.username} is polling for messages`);
+      },
+    })
+    .catch((error) => console.error("telegram polling failed:", error));
+} else if (telegram) {
+  console.log("telegram bot in webhook mode — POST /webhooks/telegram/:secret");
+}
+
+// Serve last, so every route is registered first.
 serve({ fetch: app.fetch, port: config.port }, (info) => {
   console.log(`booking engine api listening on http://localhost:${info.port}`);
 });

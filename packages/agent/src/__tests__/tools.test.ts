@@ -40,9 +40,20 @@ const call = (fn: unknown, input: unknown) =>
     messages: [],
   });
 
+/** ToolSet erases the keys, so name them once for the tests. */
+type ExecutableTools = Record<
+  "check_availability" | "create_booking" | "get_business_info" | "escalate_to_human",
+  { execute: (input: unknown, options: unknown) => Promise<unknown> }
+>;
+
+const build = (port: AgentPort) => {
+  const { tools, state } = createTools(port);
+  return { tools: tools as unknown as ExecutableTools, state };
+};
+
 describe("createTools", () => {
   it("returns local wall-clock time, not UTC", async () => {
-    const { tools } = createTools(fakePort());
+    const { tools } = build(fakePort());
     const result = (await call(tools.check_availability.execute, {
       service: "Trim",
       date: "2026-10-27",
@@ -53,7 +64,7 @@ describe("createTools", () => {
   });
 
   it("refuses a booking for a time the engine never offered", async () => {
-    const { tools, state } = createTools(fakePort());
+    const { tools, state } = build(fakePort());
 
     // The model invents 14:00 without calling check_availability.
     const result = (await call(tools.create_booking.execute, {
@@ -69,7 +80,7 @@ describe("createTools", () => {
   });
 
   it("books after the slot has been offered", async () => {
-    const { tools, state } = createTools(fakePort());
+    const { tools, state } = build(fakePort());
 
     await call(tools.check_availability.execute, {
       service: "Trim",
@@ -88,7 +99,7 @@ describe("createTools", () => {
   });
 
   it("surfaces a lost race instead of confirming", async () => {
-    const { tools, state } = createTools(
+    const { tools, state } = build(
       fakePort({
         createBooking: async () => ({
           ok: false,
@@ -114,7 +125,7 @@ describe("createTools", () => {
   });
 
   it("recovers cleanly from a rejected date", async () => {
-    const { tools } = createTools(fakePort());
+    const { tools } = build(fakePort());
     const result = (await call(tools.check_availability.execute, {
       service: "Trim",
       date: "next saturday",
@@ -124,7 +135,7 @@ describe("createTools", () => {
   });
 
   it("marks the conversation for a human on escalation", async () => {
-    const { tools, state } = createTools(fakePort());
+    const { tools, state } = build(fakePort());
     await call(tools.escalate_to_human.execute, { reason: "Wants a refund" });
 
     expect(state.escalated).toBe(true);

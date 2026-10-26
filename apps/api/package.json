@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@booking/agent": "workspace:*",
+    "@booking/channels": "workspace:*",
     "@booking/core": "workspace:*",
     "@booking/db": "workspace:*",
     "@booking/shared": "workspace:*",
     "@hono/node-server": "^1.19.0",
+    "grammy": "^1.38.0",
     "hono": "^4.9.0"
   },
   "devDependencies": {

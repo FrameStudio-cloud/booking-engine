@@ -5,11 +5,13 @@ First product: a demo site (one preset business) that uses the engine via Telegr
 
 ## Status
 
-**Phase 2 — complete** (agent + tools). Phase 3 next: real Telegram.
+**Phase 3 — Telegram live** (bot polling; first real phone message pending).
+Phase 4 next: the widget talks to the same agent.
 
-Green right now: `pnpm test` (33 passing: 27 core + 6 agent), `pnpm typecheck`,
-`apps/web` and `apps/widget` build, and a live Groq conversation that checks
-availability, quotes **local** times, and writes a confirmed booking to Postgres.
+Green right now: `pnpm test` (39 passing: 27 core + 6 agent + 6 channels),
+`pnpm typecheck`, `apps/web` and `apps/widget` build, a live Groq conversation that
+checks availability, quotes **local** times, writes a confirmed booking to Postgres,
+and a Telegram thread that resumes from the database on every message.
 
 ### Parallel work
 
@@ -51,6 +53,8 @@ Schema applied via `drizzle/0000_brainy_terrax.sql`. Verified: 8 tables, 6 enums
 - [x] `apps/widget` — Preact + Shadow DOM IIFE shell with a real slot lookup
 - [x] End-to-end proof: correct slots from the DB, `201` then `409`, and a
       4-way concurrent write that resolves to one winner
+- [x] `packages/channels` — transport-agnostic `Channel` + `handleInbound` pipeline
+- [x] `@Opencode1lewis_bot` answering on Telegram, history persisted and resumed
 
 ---
 
@@ -161,10 +165,20 @@ Notes:
 
 ## Phase 3 — Telegram channel
 
-- [ ] `packages/channels` — `Channel` interface
-- [ ] Telegram adapter (grammY), webhook route in `apps/api`
-- [ ] Conversation persistence (`conversations` + `messages`), resume on return
-- [ ] Real booking from a phone (first demo moment)
+- [x] `packages/channels` — `Channel` interface, `handleInbound` pipeline, 6 Vitest cases
+- [x] Telegram adapter (grammY): polling locally, `/webhooks/telegram/:secret` in production
+- [x] Conversation persistence (`conversations` + `messages`), resume on return
+- [x] `handleInbound` stays silent once a human takes over; apologises + escalates if the model fails
+- [ ] Real booking from a phone (first demo moment) — bot is live, waiting for a message
+
+Notes:
+- One pipeline, two transports: polling and webhook both call `handleInbound`, so
+  behaviour cannot drift between local dev and production.
+- The bot token lives in `.env` only. It was pasted in chat once, so revoke it with
+  `/revoke` in @BotFather if it ever leaves this machine.
+- `apps/api/src/dev/simulate.ts` replays a full conversation against the real
+  database with a print-only channel — handy for testing without a phone.
+  (It writes real bookings.)
 
 ## Phase 4 — Web widget
 

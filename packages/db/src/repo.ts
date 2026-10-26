@@ -28,6 +28,14 @@ export interface TenantContext {
   exceptions: AvailabilityException[];
 }
 
+export async function getTenantBySlug(
+  db: Database,
+  slug: string,
+): Promise<TenantRow | null> {
+  const row = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) });
+  return row ?? null;
+}
+
 /** One round trip for everything the slot engine needs about a business. */
 export async function loadTenantContext(
   db: Database,

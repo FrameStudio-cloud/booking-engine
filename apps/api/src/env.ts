@@ -25,4 +25,13 @@ export const config = {
   // Optional: the rest of the API works without it, /chat does not.
   groqApiKey: process.env.GROQ_API_KEY || undefined,
   llmModel: process.env.LLM_MODEL || "openai/gpt-oss-120b",
+  telegram: {
+    token: process.env.TELEGRAM_BOT_TOKEN || undefined,
+    /** "polling" for local dev, "webhook" in production. */
+    mode: (process.env.TELEGRAM_MODE === "webhook" ? "webhook" : "polling") as
+      | "polling"
+      | "webhook",
+    tenantSlug: process.env.TELEGRAM_TENANT_SLUG || "glow-salon",
+    webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || "dev-secret",
+  },
 };
