@@ -163,6 +163,10 @@ export const bookings = pgTable(
     customerName: text("customer_name").notNull(),
     customerPhone: text("customer_phone"),
     source: varchar("source", { length: 32 }).notNull().default("dashboard"),
+    /** Set when the booking came out of a chat — one live booking per thread. */
+    conversationId: uuid("conversation_id").references(() => conversations.id, {
+      onDelete: "set null",
+    }),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -170,6 +174,7 @@ export const bookings = pgTable(
     // The hot path: "what is already booked on this resource in this window?"
     index("bookings_resource_window_idx").on(t.resourceId, t.startsAt, t.endsAt),
     index("bookings_tenant_window_idx").on(t.tenantId, t.startsAt),
+    index("bookings_conversation_idx").on(t.conversationId),
   ],
 );
 

@@ -8,6 +8,13 @@
       "when": 1792990215524,
       "tag": "0000_brainy_terrax",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792992858181,
+      "tag": "0001_bouncy_absorbing_man",
+      "breakpoints": true
     }
   ]
 }

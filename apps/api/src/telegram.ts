@@ -41,7 +41,16 @@ export function createTelegramBot(options: TelegramBotOptions) {
     const tenant = await getTenantBySlug(db, tenantSlug);
     if (!tenant) throw new Error(`unknown tenant: ${tenantSlug}`);
 
-    const port = await buildAgentPort(db, tenant.slug, new Date());
+    // The thread exists before the model runs, so the port can enforce
+    // "one booking per chat" and the conversation row is never orphaned.
+    const conversation = await getOrCreateConversation(db, {
+      tenantId: tenant.id,
+      channel: "telegram",
+      externalId: chatId,
+      customerName: customerName ?? null,
+    });
+
+    const port = await buildAgentPort(db, tenant.slug, new Date(), conversation.id);
     if (!port) throw new Error(`could not build agent port for ${tenantSlug}`);
 
     const store: ConversationStore = {

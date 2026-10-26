@@ -150,11 +150,14 @@ export type CreateBookingInput = {
   customerPhone?: string | null;
   source?: string;
   notes?: string | null;
+  /** When set, the booking belongs to a chat thread and is unique per thread. */
+  conversationId?: string | null;
 };
 
 export type CreateBookingOutcome =
   | { ok: true; booking: BookingRow }
   | { ok: false; reason: "resource_busy"; capacity: number }
+  | { ok: false; reason: "already_booked"; bookingId: string; startsAt: Date }
   | { ok: false; reason: "no_such_resource" | "no_such_service" | "resource_inactive" | "service_inactive" };
 
 /**
@@ -186,6 +189,30 @@ export async function createBooking(
 
     if (!service) return { ok: false, reason: "no_such_service" } as const;
     if (!service.active) return { ok: false, reason: "service_inactive" } as const;
+
+    // One live booking per chat: a model that replays a booking call on a
+    // "thanks, bye" message must not double-book the customer.
+    if (input.conversationId) {
+      const [existing] = await tx
+        .select({ id: bookings.id, startsAt: bookings.startsAt })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.conversationId, input.conversationId),
+            ne(bookings.status, "cancelled"),
+          ),
+        )
+        .limit(1);
+
+      if (existing) {
+        return {
+          ok: false,
+          reason: "already_booked",
+          bookingId: existing.id,
+          startsAt: existing.startsAt,
+        } as const;
+      }
+    }
 
     const capacity = Math.min(resource.capacity, Math.max(1, service.capacity));
     const effectiveStart = new Date(
@@ -220,6 +247,7 @@ export async function createBooking(
         customerName: input.customerName,
         customerPhone: input.customerPhone ?? null,
         source: input.source ?? "dashboard",
+        conversationId: input.conversationId ?? null,
         notes: input.notes ?? null,
       })
       .returning();

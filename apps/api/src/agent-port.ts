@@ -23,6 +23,7 @@ export async function buildAgentPort(
   db: Database,
   slug: string,
   now: Date,
+  conversationId?: string | null,
 ): Promise<AgentPort | null> {
   const today = toLocalDate(now, "UTC");
   const seed = await loadTenantContext(db, slug, today, today);
@@ -151,9 +152,24 @@ export async function buildAgentPort(
         customerName: input.customerName,
         customerPhone: input.customerPhone ?? null,
         source: "agent",
+        conversationId: conversationId ?? null,
       });
 
       if (!outcome.ok) {
+        if (outcome.reason === "already_booked") {
+          const local = new Intl.DateTimeFormat("en-GB", {
+            timeZone: timezone,
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          }).format(outcome.startsAt);
+
+          return {
+            ok: false,
+            message: `This customer already has a booking at ${local} from this chat. Do not create another one — confirm the existing booking and answer their question.`,
+          };
+        }
+
         return { ok: false, message: "That slot was just taken. Offer another time." };
       }
 

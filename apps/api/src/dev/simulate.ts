@@ -13,6 +13,7 @@ import { db } from "../db";
 import { createTelegramBot } from "../telegram";
 
 const CHAT_ID = "sim-9001";
+const CUSTOMER = "Sim Tester";
 
 const sent: string[] = [];
 const echo: Channel = {
@@ -33,7 +34,12 @@ const { onText } = createTelegramBot({
   channel: echo,
 });
 
-const lines = ["I need a trim tomorrow", "book the first one please", "Wanjiku Wairimu"];
+const lines = [
+  "I need a trim tomorrow",
+  "book the first one please",
+  CUSTOMER,
+  "thanks, bye",
+];
 
 for (const [index, line] of lines.entries()) {
   console.log(`\n[${index + 1}] customer: ${line}`);
@@ -59,4 +65,11 @@ const thread = await messageThread(db, conversation.id);
 console.log(`\npersisted ${thread.length} messages for conversation ${conversation.id} (status: ${conversation.status})`);
 for (const row of thread) console.log(`  ${row.role}: ${row.content}`);
 
-process.exit(0);
+const booked = await db.query.bookings.findMany({
+  where: (table, { eq }) => eq(table.customerName, CUSTOMER),
+});
+
+console.log(`\nbookings for ${CUSTOMER}: ${booked.length}`);
+for (const row of booked) console.log(`  ${row.startsAt.toISOString()} (${row.status})`);
+
+process.exit(booked.length === 1 ? 0 : 1);

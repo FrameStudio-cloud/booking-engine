@@ -29,7 +29,9 @@ with the engine agent. Read §0 of that file before starting either side.
 | Branch | `main` (`br-morning-cell-b9r5x1q6`) |
 | Credentials | repo-root `.env` (gitignored) |
 
-Schema applied via `drizzle/0000_brainy_terrax.sql`. Verified: 8 tables, 6 enums.
+Schema applied via `drizzle/0000_brainy_terrax.sql` (8 tables, 6 enums) and
+`drizzle/0001_bouncy_absorbing_man.sql` (`bookings.conversation_id`, so a chat
+can own at most one live booking).
 
 ---
 
@@ -174,6 +176,15 @@ Notes:
 Notes:
 - One pipeline, two transports: polling and webhook both call `handleInbound`, so
   behaviour cannot drift between local dev and production.
+- Found live on the first real chat, both fixed and re-tested:
+  - the model re-booked on "thanks, bye" and produced two bookings at the same
+    time with different staff. `bookings.conversation_id` + a guard inside
+    `createBooking` now refuses a second live booking per chat, before the
+    capacity check.
+  - it printed "10:00 am" against a 24-hour house style; the prompt now bans
+    `am`/`pm` and conversion.
+- Voice notes and stickers get "I can only read text for now" — transcription is
+  a later phase, not a v1 promise.
 - The bot token lives in `.env` only. It was pasted in chat once, so revoke it with
   `/revoke` in @BotFather if it ever leaves this machine.
 - `apps/api/src/dev/simulate.ts` replays a full conversation against the real

@@ -294,6 +294,9 @@ const telegram = config.telegram.token
   : null;
 
 if (telegram && config.telegram.mode === "webhook") {
+  // Webhook updates arrive before polling would ever init the bot.
+  await telegram.bot.init();
+
   app.post("/webhooks/telegram/:secret", async (c) => {
     if (c.req.param("secret") !== config.telegram.webhookSecret) {
       return c.json({ error: "forbidden" }, 403);
