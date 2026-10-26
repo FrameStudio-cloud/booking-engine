@@ -15,7 +15,7 @@ function tomorrow() {
 }
 
 async function lookupSlots(apiBase, tenantSlug) {
-  const url = `${apiBase}/api/tenants/${tenantSlug}/slots?date=${tomorrow()}&service=svc-trim`;
+  const url = `${apiBase}/api/tenants/${tenantSlug}/slots?date=${tomorrow()}&service=trim`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`lookup failed (${res.status})`);
   return res.json();

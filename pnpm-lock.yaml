@@ -13,6 +13,9 @@ importers:
       '@booking/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@booking/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@booking/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -86,6 +89,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@booking/core':
+        specifier: workspace:*
+        version: link:../core
       '@booking/shared':
         specifier: workspace:*
         version: link:../shared

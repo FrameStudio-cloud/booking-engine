@@ -1,61 +1,100 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { getStrategy, toLocalDate, validateBooking, type BusyInterval } from "@booking/core";
+import {
+  createBooking,
+  loadBusyIntervals,
+  loadTenantContext,
+  pingDatabase,
+  resolveService,
+  toSharedService,
+} from "@booking/db";
+import {
+  addDays,
+  getStrategy,
+  toLocalDate,
+  validateBooking,
+  zonedTimeToUtc,
+} from "@booking/core";
 import { localDateSchema, type LocalDate } from "@booking/shared";
-import { demoBusy, demoRules, demoServices, demoStaff, demoTenant } from "./demo";
-
-const PORT = Number(process.env.PORT ?? 8787);
-const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN ?? "http://localhost:5173";
+import { config } from "./env";
+import { db } from "./db";
 
 const app = new Hono();
 
-app.use("*", cors({ origin: DASHBOARD_ORIGIN }));
+app.use("*", cors({ origin: config.dashboardOrigin }));
 
-/** Bookings created through the API during this process. Replaced by Postgres in phase 1. */
-const liveBookings: BusyInterval[] = [];
+app.get("/api/health", async (c) => {
+  const started = Date.now();
+  const database = (await pingDatabase(db)) ? "ok" : "unreachable";
 
-app.get("/api/health", (c) =>
-  c.json({
-    status: "ok",
-    phase: "1 - schema + core",
-    time: new Date().toISOString(),
-  }),
-);
+  return c.json(
+    {
+      status: database === "ok" ? "ok" : "degraded",
+      phase: "1b - postgres",
+      database,
+      latencyMs: Date.now() - started,
+      time: new Date().toISOString(),
+    },
+    database === "ok" ? 200 : 503,
+  );
+});
 
-app.get("/api/tenants/:slug", (c) => {
-  if (c.req.param("slug") !== demoTenant.slug) return c.json({ error: "unknown tenant" }, 404);
-  return c.json({ tenant: demoTenant, services: demoServices, staff: demoStaff });
+app.get("/api/tenants/:slug", async (c) => {
+  const today = toLocalDate(new Date(), "Africa/Nairobi");
+  const context = await loadTenantContext(db, c.req.param("slug"), today, today);
+  if (!context) return c.json({ error: "unknown tenant" }, 404);
+
+  return c.json({
+    tenant: context.tenant,
+    services: context.services,
+    resources: context.resources,
+  });
 });
 
 /**
- * GET /api/tenants/:slug/slots?date=2026-10-27&service=svc-braids
- * Everything here comes from @booking/core — the route only shapes input/output.
+ * GET /api/tenants/:slug/slots?date=2026-10-27&service=trim
+ * `service` accepts a uuid or a readable key such as "trim".
  */
-app.get("/api/tenants/:slug/slots", (c) => {
-  if (c.req.param("slug") !== demoTenant.slug) return c.json({ error: "unknown tenant" }, 404);
+app.get("/api/tenants/:slug/slots", async (c) => {
+  const slug = c.req.param("slug");
 
-  const today = toLocalDate(new Date(), demoTenant.timezone);
+  // Load once to learn the timezone, then again for the requested date.
+  const peek = await loadTenantContext(db, slug, "2000-01-01", "2000-01-01");
+  if (!peek) return c.json({ error: "unknown tenant" }, 404);
+
+  const timezone = peek.tenant.timezone;
+  const today = toLocalDate(new Date(), timezone);
   const parsedDate = localDateSchema.safeParse(c.req.query("date") ?? today);
-  if (!parsedDate.success) {
-    return c.json({ error: "date must be YYYY-MM-DD" }, 400);
-  }
+  if (!parsedDate.success) return c.json({ error: "date must be YYYY-MM-DD" }, 400);
   const date = parsedDate.data as LocalDate;
 
-  const serviceId = c.req.query("service") ?? demoServices[0]?.id;
-  const service = demoServices.find((s) => s.id === serviceId);
-  if (!service) return c.json({ error: "unknown service" }, 404);
+  const context = await loadTenantContext(db, slug, date, date);
+  if (!context) return c.json({ error: "unknown tenant" }, 404);
 
-  const busy = [...demoBusy(date, demoTenant.timezone), ...liveBookings];
+  const serviceKey = c.req.query("service") ?? context.services[0]?.id;
+  const serviceRow = serviceKey ? resolveService(context.services, serviceKey) : undefined;
+  if (!serviceRow) return c.json({ error: "unknown service" }, 404);
+  const service = toSharedService(serviceRow);
 
-  const slots = getStrategy(demoTenant.businessType).findSlots({
-    timezone: demoTenant.timezone,
+  const dayStart = zonedTimeToUtc(date, "00:00", timezone);
+  const busy = await loadBusyIntervals(
+    db,
+    context.tenant.id,
+    padDays(dayStart, -1),
+    padDays(zonedTimeToUtc(addDays(date, 1), "00:00", timezone), 1),
+  );
+
+  const slots = getStrategy(context.tenant.businessType).findSlots({
+    timezone,
     durationMinutes: service.durationMinutes,
     capacity: service.capacity,
     bufferBeforeMinutes: service.bufferBeforeMinutes,
-    resources: demoStaff,
-    rules: demoRules,
-    exceptions: [],
+    resources: context.resources
+      .filter((r) => r.active)
+      .map((r) => ({ id: r.id, name: r.name, capacity: r.capacity })),
+    rules: context.rules,
+    exceptions: context.exceptions,
     busy,
     from: new Date(),
     dateFrom: date,
@@ -63,6 +102,7 @@ app.get("/api/tenants/:slug/slots", (c) => {
     slotStepMinutes: 30,
     minLeadMinutes: 30,
     maxResults: 50,
+    partySize: Number(c.req.query("partySize") ?? "1"),
   });
 
   return c.json({
@@ -73,13 +113,14 @@ app.get("/api/tenants/:slug/slots", (c) => {
       resourceName: s.resourceName,
       startsAt: s.startsAt.toISOString(),
       endsAt: s.endsAt.toISOString(),
+      units: s.units,
     })),
   });
 });
 
-/** POST /api/tenants/:slug/bookings — the guard that makes double-booking impossible. */
+/** POST /api/tenants/:slug/bookings */
 app.post("/api/tenants/:slug/bookings", async (c) => {
-  if (c.req.param("slug") !== demoTenant.slug) return c.json({ error: "unknown tenant" }, 404);
+  const slug = c.req.param("slug");
 
   const body = (await c.req.json().catch(() => null)) as {
     serviceId?: string;
@@ -87,6 +128,7 @@ app.post("/api/tenants/:slug/bookings", async (c) => {
     startsAt?: string;
     customerName?: string;
     customerPhone?: string;
+    source?: string;
   } | null;
 
   if (!body?.serviceId || !body.resourceId || !body.startsAt || !body.customerName) {
@@ -96,53 +138,85 @@ app.post("/api/tenants/:slug/bookings", async (c) => {
     );
   }
 
-  const service = demoServices.find((s) => s.id === body.serviceId);
-  if (!service) return c.json({ error: "unknown service" }, 404);
+  const context = await loadTenantContext(db, slug, "2000-01-01", "2000-01-01");
+  if (!context) return c.json({ error: "unknown tenant" }, 404);
 
-  const resource = demoStaff.find((r) => r.id === body.resourceId);
+  const serviceRow = resolveService(context.services, body.serviceId);
+  if (!serviceRow) return c.json({ error: "unknown service" }, 404);
+
+  const resource = context.resources.find((r) => r.id === body.resourceId);
   if (!resource) return c.json({ error: "unknown resource" }, 404);
 
   const startsAt = new Date(body.startsAt);
   if (Number.isNaN(startsAt.getTime())) return c.json({ error: "invalid startsAt" }, 400);
-  const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
+  const endsAt = new Date(startsAt.getTime() + serviceRow.durationMinutes * 60_000);
+
+  const timezone = context.tenant.timezone;
+  const date = toLocalDate(startsAt, timezone);
+
+  const scoped = await loadTenantContext(db, slug, date, date);
+  const busy = await loadBusyIntervals(
+    db,
+    context.tenant.id,
+    padDays(startsAt, -2),
+    padDays(endsAt, 2),
+  );
 
   const check = validateBooking({
     request: { resourceId: resource.id, startsAt, endsAt },
-    resource,
-    timezone: demoTenant.timezone,
+    resource: { id: resource.id, name: resource.name, capacity: resource.capacity },
+    timezone,
     now: new Date(),
-    capacity: service.capacity,
-    bufferBeforeMinutes: service.bufferBeforeMinutes,
-    busy: [...demoBusy(toLocalDate(startsAt, demoTenant.timezone), demoTenant.timezone), ...liveBookings],
-    rules: demoRules,
-    exceptions: [],
+    capacity: serviceRow.capacity,
+    bufferBeforeMinutes: serviceRow.bufferBeforeMinutes,
+    busy,
+    rules: scoped?.rules ?? context.rules,
+    exceptions: scoped?.exceptions ?? [],
   });
 
   if (!check.ok) {
-    return c.json({ error: check.message, reason: check.reason }, 409);
+    const status = check.reason === "conflict" ? 409 : 422;
+    return c.json({ error: check.message, reason: check.reason }, status);
   }
 
-  const booking = {
-    id: `bk-${liveBookings.length + 1}`,
-    serviceId: service.id,
-    resourceId: resource.id,
-    startsAt: startsAt.toISOString(),
-    endsAt: endsAt.toISOString(),
-    customerName: body.customerName,
-    customerPhone: body.customerPhone ?? null,
-    status: "confirmed" as const,
-  };
-
-  liveBookings.push({
+  // The repository re-checks under a row lock, so a race still loses cleanly.
+  const outcome = await createBooking(db, {
+    tenantId: context.tenant.id,
+    serviceId: serviceRow.id,
     resourceId: resource.id,
     startsAt,
     endsAt,
-    status: "confirmed",
+    customerName: body.customerName,
+    customerPhone: body.customerPhone ?? null,
+    source: body.source ?? "dashboard",
   });
 
-  return c.json({ booking }, 201);
+  if (!outcome.ok) {
+    return c.json({ error: "Could not hold that slot.", reason: outcome.reason }, 409);
+  }
+
+  return c.json(
+    {
+      booking: {
+        id: outcome.booking.id,
+        serviceId: outcome.booking.serviceId,
+        serviceName: serviceRow.name,
+        resourceId: outcome.booking.resourceId,
+        resourceName: resource.name,
+        startsAt: outcome.booking.startsAt.toISOString(),
+        endsAt: outcome.booking.endsAt.toISOString(),
+        customerName: outcome.booking.customerName,
+        status: outcome.booking.status,
+      },
+    },
+    201,
+  );
 });
 
-serve({ fetch: app.fetch, port: PORT }, (info) => {
+function padDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 86_400_000);
+}
+
+serve({ fetch: app.fetch, port: config.port }, (info) => {
   console.log(`booking engine api listening on http://localhost:${info.port}`);
 });

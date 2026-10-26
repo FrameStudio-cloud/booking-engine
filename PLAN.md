@@ -5,13 +5,11 @@ First product: a demo site (one preset business) that uses the engine via Telegr
 
 ## Status
 
-**Phase 1 — core done, persistence next**
+**Phase 1 — complete** (schema, core, persistence). Phase 2 next: the agent.
 
 Green right now: `pnpm test` (27 passing), `pnpm typecheck`, `apps/web` builds,
-`apps/widget` builds (7.5 kB gzip), API answers slots and rejects double bookings.
-
-Blocked on: nothing. Database is provisioned; next job is the repository layer
-that moves the demo tenant out of its in-memory fixture.
+`apps/widget` builds (7.5 kB gzip), API reads and writes real Postgres rows,
+and four simultaneous writes to one slot yield exactly one `201` and three `409`.
 
 ### Database
 
@@ -39,9 +37,14 @@ Schema applied via `drizzle/0000_brainy_terrax.sql`. Verified: 8 tables, 6 enums
 - [x] 27 Vitest cases: collisions, buffers, capacity, closed days, holidays,
       DST, back-to-back stays, past slots, party size
 - [x] `apps/api` — Hono server: `/health`, `/tenants/:slug/slots`, `POST /bookings`
+- [x] `packages/db` — repository layer: `loadTenantContext`, `loadBusyIntervals`,
+      `createBooking` (transaction + `SELECT … FOR UPDATE`), `pingDatabase`
+- [x] `packages/db` — idempotent seed: Glow Salon, 2 stylists, 3 services, Mon-Sat hours
+- [x] `apps/api` reads Postgres; in-memory fixture deleted
 - [x] `apps/web` — Vite + React (JSX) + Tailwind v4 landing page, live health check
 - [x] `apps/widget` — Preact + Shadow DOM IIFE shell with a real slot lookup
-- [x] End-to-end proof: API returns 28 correct slots, then 201 → 409 on the same slot
+- [x] End-to-end proof: correct slots from the DB, `201` then `409`, and a
+      4-way concurrent write that resolves to one winner
 
 ---
 
@@ -121,13 +124,14 @@ A new business type is a **config preset**, not a codebase.
 - [x] Vitest suite: overlaps, closed days, exceptions, DST, capacity > 1, back-to-back stays
 - [x] `pnpm test` green (27 cases)
 
-### Phase 1b — persistence (next)
+### Phase 1b — persistence (done)
 
 - [x] Provision Neon, set `DATABASE_URL` / `DATABASE_URL_DIRECT`
 - [x] `pnpm db:generate` + `db:migrate` — migration `0000_brainy_terrax.sql` applied, committed
-- [ ] `packages/db` repository layer: `loadSlotInput`, `insertBooking` (transaction + row lock)
-- [ ] Swap `apps/api/src/demo.ts` fixture for real queries
-- [ ] Seed script: Glow Salon with staff, services, hours
+- [x] `packages/db` repository layer: `loadTenantContext`, `loadBusyIntervals`,
+      `createBooking` (transaction + row lock), `pingDatabase`
+- [x] Swap `apps/api/src/demo.ts` fixture for real queries (fixture deleted)
+- [x] Seed script: Glow Salon with staff, services, hours, one existing booking
 - [ ] `cancelBooking` / `rescheduleBooking` in core
 
 

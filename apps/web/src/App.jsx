@@ -155,7 +155,7 @@ export default function App() {
       </main>
 
       <footer className="mx-auto mt-10 max-w-6xl border-t border-ink/10 px-6 py-8 text-xs text-ink/40">
-        Phase 1 — schema and core. Channels land next.
+        Phase 1b — bookings persist to Postgres. Channels land next.
       </footer>
     </div>
   );

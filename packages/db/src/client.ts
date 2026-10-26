@@ -5,11 +5,11 @@ import * as schema from "./schema";
 export type Database = ReturnType<typeof createDb>;
 
 export function createDb(url: string) {
-  const sql = postgres(url, {
+  const client = postgres(url, {
     max: 10,
-    // Neon pooled connections + prepared statements don't always mix.
+    // Neon's pooled connections don't always play nice with prepared statements.
     prepare: false,
   });
-  const db = drizzle(sql, { schema });
-  return Object.assign(db, { $client: sql });
+
+  return drizzle(client, { schema });
 }
