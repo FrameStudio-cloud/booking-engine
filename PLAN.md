@@ -201,7 +201,7 @@ Notes:
 
 ## Phase 5 — Dashboard + staff takeover
 
-- [ ] `apps/web` shell — built from `WEB-SPEC.md` by a separate agent
+- [x] `apps/web` shell — built from `WEB-SPEC.md` (mock data, hash router)
 - [ ] Auth, tenant switcher
 - [ ] Wire shell mock data to the real API (services / resources / hours / bookings)
 - [ ] Inbox: conversations, `status: bot | needs_human | human`
