@@ -1,3 +1,7 @@
+> **Historical — absorbed into [`PLAN-V2.md`](./PLAN-V2.md) §5.1.**
+> All three gaps are now scheduled (Phase 10, Phase 15) or explicitly deferred.
+> Do not treat this file as the current backlog.
+
 # Open gaps
 
 Three things stand between the engine as it is and handing it to a paying client.

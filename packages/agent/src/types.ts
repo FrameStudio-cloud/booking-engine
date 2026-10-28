@@ -66,6 +66,14 @@ export interface AgentPort {
     customerName: string;
     customerPhone?: string | null;
   }): Promise<BookingAttempt>;
+  /** Cancel a booking this conversation owns. */
+  cancelBooking(input: { bookingId: string; reason?: string | null }): Promise<BookingAttempt>;
+  /** Move a booking this conversation owns. Same anti-invention rules as create. */
+  rescheduleBooking(input: {
+    bookingId: string;
+    startsAt: Date;
+    reason?: string | null;
+  }): Promise<BookingAttempt>;
 }
 
 export interface ChatMessage {

@@ -1,3 +1,5 @@
+> **Frozen.** See `PLAN-V2.md` §8. Presentational work only; no new dashboard scope.
+
 # States contract — dashboard loading, empty, offline
 
 Scope: **presentational only.** Three new components, one preview page, one

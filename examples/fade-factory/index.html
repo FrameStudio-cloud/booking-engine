@@ -264,24 +264,26 @@
           </div>
         </div>
 
-        <div class="board">
+        <div class="board" data-services="fade-factory" data-api="http://127.0.0.1:8787">
           <div>
             <h2>The board</h2>
 
-            <div class="price">
-              <span class="name">Skin fade<span class="mins">40 min</span></span>
-              <span class="dots" aria-hidden="true"></span>
-              <span class="amount">700</span>
-            </div>
-            <div class="price">
-              <span class="name">Beard trim<span class="mins">20 min</span></span>
-              <span class="dots" aria-hidden="true"></span>
-              <span class="amount">300</span>
-            </div>
-            <div class="price">
-              <span class="name">Cut and beard<span class="mins">60 min</span></span>
-              <span class="dots" aria-hidden="true"></span>
-              <span class="amount">900</span>
+            <div id="board-list">
+              <div class="price">
+                <span class="name">Skin fade<span class="mins">40 min</span></span>
+                <span class="dots" aria-hidden="true"></span>
+                <span class="amount">700</span>
+              </div>
+              <div class="price">
+                <span class="name">Beard trim<span class="mins">20 min</span></span>
+                <span class="dots" aria-hidden="true"></span>
+                <span class="amount">300</span>
+              </div>
+              <div class="price">
+                <span class="name">Cut and beard<span class="mins">60 min</span></span>
+                <span class="dots" aria-hidden="true"></span>
+                <span class="amount">900</span>
+              </div>
             </div>
           </div>
 
@@ -309,6 +311,49 @@
       document.querySelectorAll("[data-open-chat]").forEach((button) => {
         button.addEventListener("click", () => window.BookingWidget?.open());
       });
+
+      // The board is the engine's price list, not a copy. Static rows above are
+      // the no-JS fallback; a failed fetch leaves them untouched.
+      (() => {
+        const board = document.querySelector("[data-services]");
+        const list = document.getElementById("board-list");
+        if (!board || !list) return;
+
+        fetch(`${board.dataset.api}/api/tenants/${board.dataset.services}/services`)
+          .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+          .then((data) => {
+            if (!data.services || data.services.length === 0) return;
+
+            list.replaceChildren(
+              ...data.services.map((service) => {
+                const row = document.createElement("div");
+                row.className = "price";
+
+                const name = document.createElement("span");
+                name.className = "name";
+                name.textContent = service.name;
+                const mins = document.createElement("span");
+                mins.className = "mins";
+                mins.textContent = `${service.durationMinutes} min`;
+                name.append(mins);
+
+                const dots = document.createElement("span");
+                dots.className = "dots";
+                dots.setAttribute("aria-hidden", "true");
+
+                const amount = document.createElement("span");
+                amount.className = "amount";
+                amount.textContent = service.price;
+
+                row.append(name, dots, amount);
+                return row;
+              }),
+            );
+          })
+          .catch(() => {
+            /* static fallback stays */
+          });
+      })();
     </script>
 
     <!-- One tag. No data-api: the widget assumes the API lives where it loaded from. -->

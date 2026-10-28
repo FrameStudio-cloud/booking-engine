@@ -18,20 +18,38 @@ function required(name: string): string {
   return value;
 }
 
+const telegramMode = process.env.TELEGRAM_MODE === "webhook" ? "webhook" : "polling";
+const telegramToken = process.env.TELEGRAM_BOT_TOKEN || undefined;
+const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET || undefined;
+
+// Fail loudly. A webhook with a guessed secret can write bookings and messages;
+// a default value here would be the whole vulnerability.
+if (telegramMode === "webhook" && telegramToken && !webhookSecret) {
+  throw new Error(
+    "TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_MODE=webhook — generate one and set it",
+  );
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 8787),
   databaseUrl: required("DATABASE_URL"),
   dashboardOrigin: process.env.DASHBOARD_ORIGIN ?? "http://localhost:5173",
+  /** Machine credential for every /api/tenants/* route except the widget. */
+  engineApiKey: required("ENGINE_API_KEY"),
   // Optional: the rest of the API works without it, /chat does not.
   groqApiKey: process.env.GROQ_API_KEY || undefined,
   llmModel: process.env.LLM_MODEL || "openai/gpt-oss-120b",
   telegram: {
-    token: process.env.TELEGRAM_BOT_TOKEN || undefined,
+    token: telegramToken,
     /** "polling" for local dev, "webhook" in production. */
-    mode: (process.env.TELEGRAM_MODE === "webhook" ? "webhook" : "polling") as
-      | "polling"
-      | "webhook",
+    mode: telegramMode,
     tenantSlug: process.env.TELEGRAM_TENANT_SLUG || "glow-salon",
-    webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || "dev-secret",
+    webhookSecret: webhookSecret ?? "",
   },
+  /**
+   * Seals channel credentials at rest and derives per-tenant webhook secrets.
+   * Optional here: the API boots without it, and refuses to start only when a
+   * tenant actually has a stored channel credential.
+   */
+  channelSecretKey: process.env.CHANNEL_SECRET_KEY || undefined,
 };

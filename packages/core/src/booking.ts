@@ -1,4 +1,8 @@
-import type { AvailabilityException, AvailabilityRule } from "@booking/shared";
+import type {
+  AvailabilityException,
+  AvailabilityRule,
+  BookingStatus,
+} from "@booking/shared";
 import { findConflicts, resolveWindows } from "./availability";
 import { getZonedParts, toLocalDate } from "./time";
 import type { BookableResource, BusyInterval } from "./types";
@@ -130,3 +134,109 @@ function toMin(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number) as [number, number];
   return h * 60 + m;
 }
+
+export type CancellationCheck =
+  | { ok: true; alreadyCancelled: boolean }
+  | { ok: false; reason: "already_started"; message: string };
+
+/**
+ * Whether this booking may be cancelled.
+ *
+ * Idempotent on purpose: a customer tapping "cancel" twice, or a model replaying
+ * the call, must not get an error the second time. A booking that has already
+ * begun is not the customer's to cancel from chat — a person handles that.
+ */
+export function checkCancellation(input: {
+  status: BookingStatus;
+  startsAt: Date;
+  now: Date;
+}): CancellationCheck {
+  if (input.status === "cancelled") return { ok: true, alreadyCancelled: true };
+
+  if (input.startsAt.getTime() <= input.now.getTime()) {
+    return {
+      ok: false,
+      reason: "already_started",
+      message: "That booking has already started — a team member will help with it.",
+    };
+  }
+
+  return { ok: true, alreadyCancelled: false };
+}
+
+export type RescheduleRejection = BookingRejection | "cancelled" | "already_started";
+
+export interface RescheduleInput extends ValidateBookingInput {
+  /** The booking being moved. Its own interval never conflicts with itself. */
+  booking: {
+    resourceId: string;
+    startsAt: Date;
+    endsAt: Date;
+    status: BookingStatus;
+  };
+  newStart: Date;
+}
+
+export type ReschedulePlan =
+  | { ok: true; startsAt: Date; endsAt: Date }
+  | {
+      ok: false;
+      reason: RescheduleRejection;
+      message: string;
+      conflicts?: BusyInterval[];
+    };
+
+/**
+ * Moving a booking is not booking a second one.
+ *
+ * The duration comes from the booking, not from today's service row — a booking
+ * agreed at 120 minutes stays 120 minutes even if the service was edited since.
+ * The booking's own interval is removed from `busy` before validation, otherwise
+ * "move it to the same time" would always collide with itself.
+ */
+export function planReschedule(input: RescheduleInput): ReschedulePlan {
+  const { booking, newStart, now } = input;
+
+  if (booking.status === "cancelled") {
+    return {
+      ok: false,
+      reason: "cancelled",
+      message: "That booking was cancelled. Make a new booking instead.",
+    };
+  }
+
+  if (booking.startsAt.getTime() <= now.getTime()) {
+    return {
+      ok: false,
+      reason: "already_started",
+      message: "That booking has already started — a team member will help with it.",
+    };
+  }
+
+  const duration = booking.endsAt.getTime() - booking.startsAt.getTime();
+  if (duration <= 0) {
+    return { ok: false, reason: "ends_before_starts", message: "That booking has no length." };
+  }
+
+  const endsAt = new Date(newStart.getTime() + duration);
+
+  const busy = input.busy.filter(
+    (interval) =>
+      !(
+        interval.resourceId === booking.resourceId &&
+        interval.startsAt.getTime() === booking.startsAt.getTime() &&
+        interval.endsAt.getTime() === booking.endsAt.getTime()
+      ),
+  );
+
+  const checked = validateBooking({
+    ...input,
+    request: { resourceId: booking.resourceId, startsAt: newStart, endsAt },
+    busy,
+  });
+
+  if (!checked.ok) return checked;
+
+  return { ok: true, startsAt: checked.startsAt, endsAt: checked.endsAt };
+}
+

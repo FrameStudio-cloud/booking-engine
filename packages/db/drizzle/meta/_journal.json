@@ -22,6 +22,48 @@
       "when": 1792997826787,
       "tag": "0002_little_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793080465659,
+      "tag": "0003_wandering_stone_men",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793081106386,
+      "tag": "0004_soft_dust",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793081938577,
+      "tag": "0005_fantastic_jane_foster",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793093995733,
+      "tag": "0006_brave_red_ghost",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793094634239,
+      "tag": "0007_blue_wither",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793096194949,
+      "tag": "0008_odd_valkyrie",
+      "breakpoints": true
     }
   ]
 }

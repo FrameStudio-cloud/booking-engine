@@ -16,6 +16,8 @@ const DEFAULT_CONFIG = {
   replyTime: "Usually replies instantly",
   accent: "#111111",
   position: "right",
+  consent: "This chat is recorded so we can help you, and our team can read it.",
+  privacyUrl: null,
 };
 
 const SESSION_RE = /^[A-Za-z0-9_-]{8,128}$/;
@@ -221,6 +223,19 @@ export function Widget({ tenantSlug, apiBase }) {
               Send
             </button>
           </form>
+
+          {/* Said before they type, not buried in a policy page. */}
+          <p class="bw-consent">
+            {config.consent}
+            {config.privacyUrl && (
+              <>
+                {" "}
+                <a href={config.privacyUrl} target="_blank" rel="noreferrer">
+                  Privacy
+                </a>
+              </>
+            )}
+          </p>
         </div>
       )}
 

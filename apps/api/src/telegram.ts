@@ -55,5 +55,5 @@ export function createTelegramBot(options: TelegramBotOptions) {
     console.error("[telegram] unhandled bot error", err.error);
   });
 
-  return { bot, onText };
+  return { bot, onText, channel };
 }

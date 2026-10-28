@@ -31,17 +31,49 @@ presets/
 ```bash
 cp presets/glow-salon.json presets/kilimani-spa.json
 # edit slug, name, brand.accent, widget.greeting, facts, services, resources, hours
-pnpm tenant:new presets/kilimani-spa.json
+pnpm tenant:apply presets/kilimani-spa.json           # dry run: prints the diff
+pnpm tenant:apply presets/kilimani-spa.json --write   # applies it
 ```
 
-The command validates the file, prints what it created, and gives you the snippet
-for that customer. A field you get wrong is named by path, e.g.
-`services.0.durationMinutes: Expected number, received string`.
+The command validates the file, prints exactly what would be added, changed or
+deactivated, and writes nothing until you pass `--write`. A field you get wrong
+is named by path, e.g. `services.0.durationMinutes: Expected number, received
+string`.
 
-**It replaces.** Provisioning a slug deletes that tenant and everything under it
-(services, hours, bookings, conversations) before rebuilding from the file. That
-is right for onboarding and demo resets, wrong for a business already taking
-bookings. To change a live business, edit the rows — not the preset.
+**Changing a live business is the same command.** Edit the preset, run
+`tenant:apply`. Services and staff that disappear from the file are set inactive,
+never deleted, and existing bookings keep the price and duration they were made
+at. Running it twice changes nothing the second time.
+
+`pnpm tenant:new` still exists for demos, and **deletes** the slug first. Never
+run it against a business with real bookings.
+
+### Connect their Telegram bot
+
+Each business talks through its own bot, and the token belongs to the business,
+not to the deployment. Adding client #2 does not touch `.env`:
+
+```bash
+pnpm tenant:channel kilimani-spa --telegram-token=123456789:AA...   # or --adopt-env
+pnpm tenant:channel kilimani-spa --show                             # prints the webhook URL
+pnpm tenant:channel kilimani-spa --remove                           # stops listening, keeps the row
+```
+
+The command asks Telegram who the token belongs to before writing it, then stores
+it encrypted (AES-256-GCM, keyed by `CHANNEL_SECRET_KEY`). The webhook secret is
+derived from that key and the tenant id, so it is printed rather than stored.
+Register the URL Telegram prints:
+
+```bash
+curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=<the URL it printed>"
+```
+
+Two consequences worth knowing: rotating `CHANNEL_SECRET_KEY` changes every
+webhook URL (re-register them all), and the database alone cannot impersonate a
+business — the process key is needed too. Keep them apart.
+
+The running API reads channel rows at boot, so **restart the service** after
+adding or removing a bot. Nothing else about that business needs a deploy.
 
 ### What the file controls
 
@@ -81,6 +113,31 @@ Then:
 The widget lives in a Shadow DOM, so the host page's CSS cannot break it and its
 CSS cannot leak out. It is ~20 kB raw, ~8 kB gzipped.
 
+### Prices on their page
+
+Never type a price into their HTML. Read it from the engine:
+
+```
+GET /api/tenants/<slug>/services
+```
+
+No key needed — a public page cannot hold one. It returns the business name,
+currency, `catalogSyncedAt`, and each active service with `durationMinutes`,
+`priceMinor` and a formatted `price` (e.g. `"KES 2,500"`). Cached for 60 seconds.
+It never returns staff details or bookings.
+
+The demo pages do exactly this, keeping their static rows as a no-JS fallback, so
+one change in the preset reaches the page and the bot together.
+
+If the customer wants the list locked to their own domain, add
+`allowedOrigins` to the preset:
+
+```json
+"allowedOrigins": ["https://glowsalon.co.ke"]
+```
+
+Empty means any origin, which is fine for a public price list.
+
 ## 3. Run it
 
 ```bash
@@ -118,13 +175,15 @@ Kenya), `pnpm start` as the start command, `/api/health` as the health check.
 1. Push the repo to GitHub.
 2. Render → **New → Blueprint** → pick the repo. It reads `render.yaml`.
 3. Fill the secret env vars it asks for: `DATABASE_URL` (Neon pooled),
-   `GROQ_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`,
-   `DASHBOARD_ORIGIN`.
+   `GROQ_API_KEY`, `CHANNEL_SECRET_KEY`, `DASHBOARD_ORIGIN`. `ENGINE_API_KEY`
+   too. The old `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` pair is only
+   needed if you have not moved that business onto `tenant:channel`.
 4. Deploy. Then check `https://YOUR-APP.onrender.com/api/health`.
-5. Point Telegram at the webhook (webhook mode is already set):
+5. Attach each business's bot and register its webhook:
 
-```
-https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://YOUR-APP.onrender.com/webhooks/telegram/<SECRET>
+```bash
+pnpm tenant:channel glow-salon --telegram-token=... --url=https://YOUR-APP.onrender.com
+# prints the exact setWebhook URL — /webhooks/telegram/<slug>/<derived secret>
 ```
 
 Production snippet for a customer site — one line, that host:
@@ -151,3 +210,68 @@ Notes that will bite:
 Add it to the engine, deploy the API, and every customer site has it. Rebuild the
 widget bundle only when the widget's own behaviour changes — not when a customer
 changes their colours, prices, staff or hours.
+
+## 6. Customer data — the answer to give a client
+
+This is the section to send when a business asks "what happens to my customers'
+data?" It is accurate as of the code in this repo, not a template.
+
+**What we store**
+
+| Data | Where | Why |
+|---|---|---|
+| Customer name, phone | `bookings` (snapshot) and `conversations` | to hold the slot and greet them |
+| Chat transcript | `messages` | so the bot can continue a thread and staff can help |
+| Service, time, duration, price agreed | `bookings` (snapshot columns) | so history cannot be rewritten by a later price change |
+| Staff display name on a reply | `messages.author` | so the customer knows a person answered |
+
+We do **not** store payment details. Payment happens at the business.
+
+**How long**
+
+- Chat transcripts: **90 days by default**, per business, configurable in the
+  preset (`privacy.retentionDays`). A scheduled job deletes older messages once a
+  day. It logs a count, never content.
+- Bookings, services and prices: kept. They are the business's records, and they
+  carry their own snapshots, so they stay meaningful without the transcript.
+
+**Who else sees it**
+
+- **Groq** (United States) receives the message content of a turn, because that
+  is where the model runs. Nothing else leaves our database.
+- **Telegram / WhatsApp** carry the messages if that channel is used; the
+  business's own bot token is used, and it is stored encrypted.
+- Staff see the inbox through the dashboard. The dashboard is a staff tool and
+  has no public login yet — do not host it on a public URL until it does.
+
+**Deleting one customer, on request**
+
+```bash
+pnpm tenant:erase glow-salon --phone=+254712345678           # shows what matches
+pnpm tenant:erase glow-salon --phone=+254712345678 --write   # erases it
+```
+
+Also accepts `--external-id=<chat id>`. What happens:
+
+- the booking stays, with its service, time and price — the calendar and the
+  revenue still add up;
+- the customer's name becomes "Deleted customer" and the phone number is removed;
+- the conversation loses its name, phone and chat identity, and its transcript
+  is deleted.
+
+A dry run is the default; `--write` is required. Nothing printed contains
+message content.
+
+**What the customer is told**
+
+The widget shows, under the input and before they type: *"This chat is recorded
+so we can help you, and our team can read it."* A business can override that line
+and add a link to its own policy with `privacy.notice` and `privacy.url` in its
+preset.
+
+**What we do not have yet**
+
+- No self-service export or deletion portal. Requests go through the command
+  above.
+- No formal Data Processing Agreement template. If a client needs one signed,
+  that is a conversation, not a config change.

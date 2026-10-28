@@ -1,42 +1,52 @@
-import { serve } from "@hono/node-server";
+import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { runAgent } from "@booking/agent";
 import { createTelegramChannel, type Channel } from "@booking/channels";
 import {
   appendMessage,
+  cancelBooking,
   conversationSummaries,
   createBooking,
+  getBookingById,
   getConversationByExternalId,
   getConversationById,
   getTenantBySlug,
+  getTenantChannel,
   listBookings,
+  listPublicServices,
   loadBusyIntervals,
   loadTenantContext,
+  markConversationRead,
   messageThread,
+  openSecret,
+  parseSecretKey,
   pingDatabase,
+  rescheduleBooking,
   resolveService,
   setConversationStatus,
   toSharedService,
 } from "@booking/db";
 import {
   addDays,
+  checkCancellation,
   getStrategy,
+  planReschedule,
   toLocalDate,
   validateBooking,
   zonedTimeToUtc,
 } from "@booking/core";
-import { localDateSchema, type LocalDate } from "@booking/shared";
+import { formatMoney, localDateSchema, type LocalDate } from "@booking/shared";
 import { config } from "./env";
 import { db } from "./db";
 import { buildAgentPort } from "./agent-port";
-import { createTelegramBot } from "./telegram";
 import { runTurn } from "./pipeline";
+import { notifyNewBooking } from "./notify";
 
-const app = new Hono();
+export const app = new Hono();
 
 /**
  * The widget bundle, served by the API itself.
@@ -69,16 +79,99 @@ app.get("/widget.js", (c) => {
   });
 });
 
+/**
+ * The public price list is the one route whose allowed origins differ per
+ * tenant, so it sets its own CORS header instead of going through this one.
+ */
+const publicCatalogPath = /^\/api\/tenants\/[^/]+\/services\/?$/;
+
+function isPublicCatalog(path: string): boolean {
+  return publicCatalogPath.test(path);
+}
+
+const dashboardCors = cors({
+  origin: (origin, c) =>
+    c.req.path.includes("/widget/") ? (origin ?? "*") : config.dashboardOrigin,
+});
+
 // The dashboard is one origin. The widget is embedded anywhere, so it may come
 // from any host — decided per request rather than with a second middleware,
 // because the global one answers preflights before anything else can run.
-app.use(
-  "*",
-  cors({
-    origin: (origin, c) =>
-      c.req.path.includes("/widget/") ? (origin ?? "*") : config.dashboardOrigin,
-  }),
-);
+app.use("*", async (c, next) => {
+  if (isPublicCatalog(c.req.path)) return next();
+  return dashboardCors(c, next);
+});
+
+/**
+ * Machine auth. CORS restricts browsers; this restricts everyone.
+ *
+ * The widget routes and the public price list stay open by design: they are the
+ * embed and the customer's own site, they speak only to one tenant's own
+ * marketing data, and they are rate limited below.
+ */
+function sameKey(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+app.use("/api/tenants/*", async (c, next) => {
+  if (c.req.path.includes("/widget/")) return next();
+  if (isPublicCatalog(c.req.path)) return next();
+
+  if (!sameKey(c.req.header("x-engine-key") ?? "", config.engineApiKey)) {
+    return c.json({ error: "unauthorised" }, 401);
+  }
+
+  return next();
+});
+
+/** Cheap fixed-window limit. One instance, so memory is enough for now. */
+const buckets = new Map<string, { count: number; resetAt: number }>();
+
+function limited(key: string, limit: number, windowMs: number): number {
+  const now = Date.now();
+
+  if (buckets.size > 5000) {
+    for (const [k, b] of buckets) if (b.resetAt <= now) buckets.delete(k);
+  }
+
+  const bucket = buckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    buckets.set(key, { count: 1, resetAt: now + windowMs });
+    return 0;
+  }
+
+  if (bucket.count >= limit) return Math.ceil((bucket.resetAt - now) / 1000);
+
+  bucket.count += 1;
+  return 0;
+}
+
+/** Behind Render's proxy the client is in x-forwarded-for, not the socket. */
+function clientIp(c: Context): string {
+  return (
+    c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ??
+    c.req.header("x-real-ip") ??
+    "unknown"
+  );
+}
+
+function tooMany(c: Context, retryAfter: number) {
+  c.header("retry-after", String(retryAfter));
+  return c.json({ error: "too many requests" }, 429);
+}
+
+// Paid routes: every call costs a model request and a database write.
+app.use("/api/tenants/:slug/chat", async (c, next) => {
+  const wait = limited(`chat:${clientIp(c)}`, 30, 60_000);
+  return wait > 0 ? tooMany(c, wait) : next();
+});
+
+app.use("/api/tenants/:slug/widget/messages", async (c, next) => {
+  const wait = limited(`wip:${clientIp(c)}`, 60, 60_000);
+  return wait > 0 ? tooMany(c, wait) : next();
+});
 
 app.get("/api/health", async (c) => {
   const started = Date.now();
@@ -97,8 +190,12 @@ app.get("/api/health", async (c) => {
 });
 
 app.get("/api/tenants/:slug", async (c) => {
-  const today = toLocalDate(new Date(), "Africa/Nairobi");
-  const context = await loadTenantContext(db, c.req.param("slug"), today, today);
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  // The tenant's own clock, not ours. Every other route already does this.
+  const today = toLocalDate(new Date(), tenant.timezone);
+  const context = await loadTenantContext(db, tenant.slug, today, today);
   if (!context) return c.json({ error: "unknown tenant" }, 404);
 
   return c.json({
@@ -107,6 +204,68 @@ app.get("/api/tenants/:slug", async (c) => {
     resources: context.resources,
     rules: context.rules,
   });
+});
+
+/**
+ * The customer's own site reads its price list here.
+ *
+ * No key: a public page cannot hold one. It returns marketing data only —
+ * names, durations, prices — never staff phone numbers or bookings. Origins are
+ * restricted only when the tenant configured them; an open list is public
+ * information, and locking it down just breaks the client's own site.
+ */
+app.on(["GET", "OPTIONS"], "/api/tenants/:slug/services", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant || !tenant.active) return c.json({ error: "unknown business" }, 404);
+
+  const configured = tenant.settings.allowedOrigins ?? [];
+  const origin = c.req.header("origin");
+  const allowedOrigin =
+    origin && (configured.length === 0 || configured.includes(origin)) ? origin : null;
+
+  const headers: Record<string, string> = {
+    vary: "origin",
+    "cache-control": "public, max-age=60",
+  };
+
+  if (allowedOrigin) headers["access-control-allow-origin"] = allowedOrigin;
+
+  if (c.req.method === "OPTIONS") {
+    headers["access-control-allow-methods"] = "GET, OPTIONS";
+    headers["access-control-max-age"] = "86400";
+    return c.body(null, 204, headers);
+  }
+
+  const wait = limited(`svc:${clientIp(c)}`, 60, 60_000);
+  if (wait > 0) {
+    return c.json({ error: "too many requests" }, 429, {
+      ...headers,
+      "retry-after": String(wait),
+    });
+  }
+
+  const rows = await listPublicServices(db, tenant.id);
+
+  return c.json(
+    {
+      business: {
+        slug: tenant.slug,
+        name: tenant.name,
+        currency: tenant.currency,
+        timezone: tenant.timezone,
+      },
+      catalogSyncedAt: tenant.catalogSyncedAt.toISOString(),
+      services: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        durationMinutes: row.durationMinutes,
+        priceMinor: row.priceMinor,
+        price: formatMoney(row.priceMinor, tenant.currency),
+      })),
+    },
+    200,
+    headers,
+  );
 });
 
 /**
@@ -252,6 +411,14 @@ app.post("/api/tenants/:slug/bookings", async (c) => {
     return c.json({ error: "Could not hold that slot.", reason: outcome.reason }, 409);
   }
 
+  await notifyNewBooking(context.tenant, {
+    customerName: outcome.booking.customerName,
+    serviceName: serviceRow.name,
+    resourceName: resource.name,
+    startsAt: outcome.booking.startsAt,
+    source: outcome.booking.source,
+  });
+
   return c.json(
     {
       booking: {
@@ -268,6 +435,134 @@ app.post("/api/tenants/:slug/bookings", async (c) => {
     },
     201,
   );
+});
+
+/** POST /api/tenants/:slug/bookings/:id/cancel */
+app.post("/api/tenants/:slug/bookings/:id/cancel", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  const booking = await getBookingById(db, tenant.id, c.req.param("id"));
+  if (!booking) return c.json({ error: "unknown booking" }, 404);
+
+  const check = checkCancellation({
+    status: booking.status,
+    startsAt: booking.startsAt,
+    now: new Date(),
+  });
+  if (!check.ok) return c.json({ error: check.message, reason: check.reason }, 422);
+
+  const body = (await c.req.json().catch(() => null)) as { reason?: string } | null;
+
+  const outcome = await cancelBooking(db, {
+    tenantId: tenant.id,
+    bookingId: booking.id,
+    by: "staff",
+    reason: body?.reason ?? null,
+  });
+
+  if (!outcome.ok) {
+    return c.json({ error: "Could not cancel that booking.", reason: outcome.reason }, 409);
+  }
+
+  return c.json({
+    booking: {
+      id: outcome.booking.id,
+      status: outcome.booking.status,
+      statusReason: outcome.booking.statusReason,
+      alreadyCancelled: outcome.alreadyCancelled ?? false,
+    },
+    serviceName: outcome.booking.serviceNameAtBooking,
+    startsAt: outcome.booking.startsAt.toISOString(),
+  });
+});
+
+/** POST /api/tenants/:slug/bookings/:id/reschedule  { startsAt } */
+app.post("/api/tenants/:slug/bookings/:id/reschedule", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  const booking = await getBookingById(db, tenant.id, c.req.param("id"));
+  if (!booking) return c.json({ error: "unknown booking" }, 404);
+
+  const body = (await c.req.json().catch(() => null)) as {
+    startsAt?: string;
+    reason?: string;
+  } | null;
+
+  const newStart = body?.startsAt ? new Date(body.startsAt) : null;
+  if (!newStart || Number.isNaN(newStart.getTime())) {
+    return c.json({ error: "startsAt must be an ISO timestamp" }, 400);
+  }
+
+  const timezone = tenant.timezone;
+  const date = toLocalDate(newStart, timezone);
+  const context = await loadTenantContext(db, tenant.slug, date, date);
+  if (!context) return c.json({ error: "unknown tenant" }, 404);
+
+  const resource = context.resources.find((r) => r.id === booking.resourceId);
+  if (!resource) return c.json({ error: "booking has no live resource" }, 409);
+
+  const serviceRow = context.services.find((s) => s.id === booking.serviceId);
+
+  const busy = await loadBusyIntervals(
+    db,
+    tenant.id,
+    padDays(newStart, -2),
+    padDays(newStart, 2),
+  );
+
+  const plan = planReschedule({
+    booking: {
+      resourceId: booking.resourceId,
+      startsAt: booking.startsAt,
+      endsAt: booking.endsAt,
+      status: booking.status,
+    },
+    newStart,
+    request: { resourceId: booking.resourceId, startsAt: newStart, endsAt: newStart },
+    resource: { id: resource.id, name: resource.name, capacity: resource.capacity },
+    timezone,
+    now: new Date(),
+    capacity: serviceRow?.capacity ?? 1,
+    bufferBeforeMinutes: serviceRow?.bufferBeforeMinutes ?? 0,
+    busy,
+    rules: context.rules,
+    exceptions: context.exceptions,
+  });
+
+  if (!plan.ok) {
+    return c.json(
+      { error: plan.message, reason: plan.reason },
+      plan.reason === "conflict" ? 409 : 422,
+    );
+  }
+
+  const outcome = await rescheduleBooking(db, {
+    tenantId: tenant.id,
+    bookingId: booking.id,
+    startsAt: plan.startsAt,
+    endsAt: plan.endsAt,
+    by: "staff",
+    reason: body?.reason ?? null,
+  });
+
+  if (!outcome.ok) {
+    return c.json(
+      { error: "That slot was just taken.", reason: outcome.reason },
+      outcome.reason === "not_found" ? 404 : 409,
+    );
+  }
+
+  return c.json({
+    booking: {
+      id: outcome.booking.id,
+      startsAt: outcome.booking.startsAt.toISOString(),
+      endsAt: outcome.booking.endsAt.toISOString(),
+      status: outcome.booking.status,
+    },
+    serviceName: outcome.booking.serviceNameAtBooking,
+  });
 });
 
 function padDays(date: Date, days: number): Date {
@@ -400,8 +695,28 @@ app.get("/api/tenants/:slug/conversations/:id", async (c) => {
       id: row.id,
       role: row.role,
       text: row.content,
+      /** Display name of the staff member, when a human wrote it. */
+      author: row.author,
       at: row.createdAt.toISOString(),
     })),
+  });
+});
+
+/**
+ * Mark a thread as read. Separate from GET on purpose: a dashboard that polls
+ * the thread list must not silently clear the badge.
+ */
+app.post("/api/tenants/:slug/conversations/:id/read", async (c) => {
+  const tenant = await getTenantBySlug(db, c.req.param("slug"));
+  if (!tenant) return c.json({ error: "unknown tenant" }, 404);
+
+  const conversation = await getConversationById(db, tenant.id, c.req.param("id"));
+  if (!conversation) return c.json({ error: "unknown conversation" }, 404);
+
+  await markConversationRead(db, conversation.id);
+
+  return c.json({
+    conversation: { id: conversation.id, unread: false, unreadCount: 0 },
   });
 });
 
@@ -417,21 +732,32 @@ app.post("/api/tenants/:slug/conversations/:id/reply", async (c) => {
   const conversation = await getConversationById(db, tenant.id, c.req.param("id"));
   if (!conversation) return c.json({ error: "unknown conversation" }, 404);
 
-  const body = (await c.req.json().catch(() => null)) as { text?: string } | null;
+  const body = (await c.req.json().catch(() => null)) as {
+    text?: string;
+    staff?: string;
+  } | null;
   const text = body?.text?.trim() ?? "";
   if (text.length === 0) return c.json({ error: "text is required" }, 400);
   if (text.length > 2000) return c.json({ error: "text is too long" }, 400);
 
-  const message = await appendMessage(db, conversation.id, "staff", text);
-  await setConversationStatus(db, conversation.id, "human");
+  // Attribution is a display name, not an account. Header wins so a proxy can
+  // set it; body is the fallback for curl and the dashboard.
+  const author =
+    (c.req.header("x-staff-name") ?? body?.staff ?? "").trim().slice(0, 40) || null;
 
-  const delivery = await deliverTo(conversation.channel, conversation.externalId, text);
+  const message = await appendMessage(db, conversation.id, "staff", text, author);
+  await setConversationStatus(db, conversation.id, "human");
+  // Replying is the strongest possible "I have read this".
+  await markConversationRead(db, conversation.id, message.createdAt);
+
+  const delivery = await deliverTo(tenant.id, conversation.channel, conversation.externalId, text);
 
   return c.json({
     message: {
       id: message.id,
       role: "staff",
       text: message.content,
+      author: message.author,
       at: message.createdAt.toISOString(),
     },
     status: "human",
@@ -484,6 +810,15 @@ app.get("/api/tenants/:slug/widget/config", async (c) => {
     replyTime: settings.widget?.replyTime ?? "Usually replies instantly",
     accent: settings.brand?.accent ?? "#111111",
     position: settings.brand?.position ?? "right",
+    /**
+     * The notice the customer sees before they type. This is a data-protection
+     * line, not decoration: it says the chat is recorded and that a human reads
+     * it. `privacyUrl` is the business's own policy page, if they have one.
+     */
+    consent:
+      settings.privacy?.notice ??
+      "This chat is recorded so we can help you, and our team can read it.",
+    privacyUrl: settings.privacy?.url ?? null,
   });
 });
 
@@ -504,6 +839,10 @@ app.post("/api/tenants/:slug/widget/messages", async (c) => {
   if (!SESSION_RE.test(sessionId)) return c.json({ error: "invalid sessionId" }, 400);
   if (text.length === 0) return c.json({ error: "text is required" }, 400);
   if (text.length > 2000) return c.json({ error: "text is too long" }, 400);
+
+  // One chat window cannot drain the model budget on its own.
+  const sessionWait = limited(`wis:${sessionId}`, 20, 60_000);
+  if (sessionWait > 0) return tooMany(c, sessionWait);
 
   // The widget has no push channel: the reply travels back on this response.
   const replies: string[] = [];
@@ -567,7 +906,10 @@ app.get("/api/tenants/:slug/widget/messages", async (c) => {
   });
 });
 
-/** Telegram: polling locally, webhook in production. */
+/**
+ * Telegram: polling locally, webhook in production. Started by `server.ts`, not
+ * on import, so tests can drive the app without a bot or a port.
+ */
 const telegramChannel: Channel | null = config.telegram.token
   ? createTelegramChannel(config.telegram.token)
   : null;
@@ -575,8 +917,12 @@ const telegramChannel: Channel | null = config.telegram.token
 /**
  * One outbound door for staff replies, so a human message reaches the same
  * thread the bot uses. Widget delivery arrives with phase 4.
+ *
+ * The credential is resolved per tenant: a staff reply must leave through that
+ * business's bot, not through whichever bot the process happened to load.
  */
 async function deliverTo(
+  tenantId: string,
   channel: "telegram" | "widget" | "whatsapp",
   externalId: string,
   text: string,
@@ -584,60 +930,27 @@ async function deliverTo(
   if (channel !== "telegram") {
     return { delivered: false, error: `no delivery channel for ${channel} yet` };
   }
-  if (!telegramChannel) {
-    return { delivered: false, error: "telegram is not configured" };
+
+  const stored = config.channelSecretKey
+    ? await getTenantChannel(db, tenantId, "telegram")
+    : null;
+
+  const outbound = stored?.active && config.channelSecretKey
+    ? createTelegramChannel(openSecret(stored.secretCiphertext, parseSecretKey(config.channelSecretKey)))
+    : telegramChannel;
+
+  if (!outbound) {
+    return { delivered: false, error: "telegram is not configured for this business" };
   }
 
   try {
-    await telegramChannel.send(externalId, { text, quickReplies: [] });
+    await outbound.send(externalId, { text, quickReplies: [] });
     return { delivered: true };
   } catch (error) {
     return { delivered: false, error: error instanceof Error ? error.message : "send failed" };
   }
 }
 
-const telegram = config.telegram.token
-  ? createTelegramBot({
-      token: config.telegram.token,
-      tenantSlug: config.telegram.tenantSlug,
-      db,
-      apiKey: config.groqApiKey,
-      model: config.llmModel,
-      channel: telegramChannel ?? undefined,
-    })
-  : null;
+// Telegram polling, the webhook route, the scheduler and the HTTP listener live
+// in `server.ts`. This module only builds the app, so tests can import it.
 
-if (telegram && config.telegram.mode === "webhook") {
-  // Webhook updates arrive before polling would ever init the bot.
-  await telegram.bot.init();
-
-  app.post("/webhooks/telegram/:secret", async (c) => {
-    if (c.req.param("secret") !== config.telegram.webhookSecret) {
-      return c.json({ error: "forbidden" }, 403);
-    }
-
-    const update = await c.req.json().catch(() => null);
-    if (!update) return c.json({ error: "bad update" }, 400);
-
-    await telegram.bot.handleUpdate(update);
-    return c.json({ ok: true });
-  });
-}
-
-if (telegram && config.telegram.mode === "polling") {
-  telegram.bot
-    .start({
-      drop_pending_updates: true,
-      onStart: (info) => {
-        console.log(`telegram bot @${info.username} is polling for messages`);
-      },
-    })
-    .catch((error) => console.error("telegram polling failed:", error));
-} else if (telegram) {
-  console.log("telegram bot in webhook mode — POST /webhooks/telegram/:secret");
-}
-
-// Serve last, so every route is registered first.
-serve({ fetch: app.fetch, port: config.port }, (info) => {
-  console.log(`booking engine api listening on http://localhost:${info.port}`);
-});

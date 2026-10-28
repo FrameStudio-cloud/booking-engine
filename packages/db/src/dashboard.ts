@@ -1,11 +1,10 @@
-import { and, asc, desc, eq, gte, inArray, lt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { Database } from "./client";
 import {
   bookings,
   conversations,
   messages,
   resources,
-  services,
   type ConversationRow,
   type MessageRow,
 } from "./schema";
@@ -41,8 +40,8 @@ export async function listBookings(
     .select({
       id: bookings.id,
       serviceId: bookings.serviceId,
-      serviceName: services.name,
-      priceMinor: services.priceMinor,
+      serviceName: bookings.serviceNameAtBooking,
+      priceMinor: bookings.priceMinorAtBooking,
       resourceId: bookings.resourceId,
       resourceName: resources.name,
       startsAt: bookings.startsAt,
@@ -53,7 +52,6 @@ export async function listBookings(
       source: bookings.source,
     })
     .from(bookings)
-    .innerJoin(services, eq(services.id, bookings.serviceId))
     .innerJoin(resources, eq(resources.id, bookings.resourceId))
     .where(
       and(
@@ -71,8 +69,10 @@ export interface ConversationSummary {
   customerName: string | null;
   channel: "telegram" | "widget" | "whatsapp";
   status: "bot" | "needs_human" | "human" | "closed";
-  /** True when the customer spoke last and no human has taken over. */
+  /** True when the customer said something staff have not seen. */
   unread: boolean;
+  /** How many customer messages are waiting. */
+  unreadCount: number;
   lastMessage: { role: MessageRow["role"]; text: string; at: Date } | null;
   updatedAt: Date;
 }
@@ -107,15 +107,46 @@ export async function conversationSummaries(
     if (!latest.has(message.conversationId)) latest.set(message.conversationId, message);
   }
 
+  // Unread is "customer messages after staff last looked", not "who spoke last".
+  // The old rule went quiet the moment a human replied, even if the customer
+  // wrote again afterwards.
+  const unreadRows = await db
+    .select({
+      conversationId: messages.conversationId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(messages)
+    .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+    .where(
+      and(
+        inArray(
+          messages.conversationId,
+          rows.map((row) => row.id),
+        ),
+        eq(messages.role, "user"),
+        or(
+          isNull(conversations.staffReadAt),
+          gt(messages.createdAt, conversations.staffReadAt),
+        ),
+      ),
+    )
+    .groupBy(messages.conversationId);
+
+  const unreadByConversation = new Map(
+    unreadRows.map((row) => [row.conversationId, Number(row.count)]),
+  );
+
   return rows.map((row) => {
     const last = latest.get(row.id) ?? null;
+    const unreadCount = unreadByConversation.get(row.id) ?? 0;
 
     return {
       id: row.id,
       customerName: row.customerName,
       channel: row.channel,
       status: row.status,
-      unread: last?.role === "user" && row.status !== "human" && row.status !== "closed",
+      unread: unreadCount > 0,
+      unreadCount,
       lastMessage: last ? { role: last.role, text: last.content, at: last.createdAt } : null,
       updatedAt: row.lastMessageAt,
     };
@@ -131,8 +162,8 @@ export async function findBookingForConversation(
     .select({
       id: bookings.id,
       serviceId: bookings.serviceId,
-      serviceName: services.name,
-      priceMinor: services.priceMinor,
+      serviceName: bookings.serviceNameAtBooking,
+      priceMinor: bookings.priceMinorAtBooking,
       resourceId: bookings.resourceId,
       resourceName: resources.name,
       startsAt: bookings.startsAt,
@@ -143,7 +174,6 @@ export async function findBookingForConversation(
       source: bookings.source,
     })
     .from(bookings)
-    .innerJoin(services, eq(services.id, bookings.serviceId))
     .innerJoin(resources, eq(resources.id, bookings.resourceId))
     .where(and(eq(bookings.conversationId, conversationId), ne(bookings.status, "cancelled")))
     .limit(1);

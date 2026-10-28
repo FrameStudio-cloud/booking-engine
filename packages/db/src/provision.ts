@@ -3,6 +3,7 @@ import type { TenantConfig } from "@booking/shared";
 import { addDays, toLocalDate, zonedTimeToUtc } from "@booking/core";
 
 import type { Database } from "./client";
+import { clearTenantCache } from "./tenant-cache";
 import {
   availabilityRules,
   bookings,
@@ -47,6 +48,8 @@ export async function provisionTenant(
       settings: {
         brand: config.brand,
         widget: config.widget,
+        allowedOrigins: config.allowedOrigins,
+        ...(config.notify ? { notify: config.notify } : {}),
       },
     })
     .returning();
@@ -112,6 +115,9 @@ export async function provisionTenant(
       resourceId: resource.id,
       startsAt,
       endsAt,
+      serviceNameAtBooking: service.name,
+      durationMinutesAtBooking: service.durationMinutes,
+      priceMinorAtBooking: service.priceMinor,
       status: "confirmed",
       customerName: demo.customerName,
       source: demo.source,
@@ -119,6 +125,9 @@ export async function provisionTenant(
 
     demoBooking = `${demo.customerName} · ${service.name} · ${day} ${demo.startsAt}`;
   }
+
+  // Provisioning deletes and recreates the tenant; any cached row is now wrong.
+  clearTenantCache(db, config.slug);
 
   return {
     tenantId: tenant.id,

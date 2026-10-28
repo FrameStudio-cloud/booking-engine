@@ -17,6 +17,14 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      # Seals per-tenant bot tokens and derives their webhook secrets.
+      # Losing it means re-entering every token; leaking it means every bot.
+      - key: CHANNEL_SECRET_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      # Legacy single-tenant path. Not needed once the business is on
+      # `pnpm tenant:channel`, which stores its token sealed in the database.
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_WEBHOOK_SECRET

@@ -13,6 +13,7 @@ import {
 import type { ConversationStatus } from "@booking/shared";
 
 import { buildAgentPort } from "./agent-port";
+import { notifyNewBooking } from "./notify";
 
 /**
  * One inbound message, whatever the transport.
@@ -53,6 +54,11 @@ export interface TurnInput {
   customerName?: string | null;
   apiKey?: string;
   model?: string;
+  /**
+   * Test seam. The model is the only thing that needs a network; the tools,
+   * database and channel still run for real when this is replaced.
+   */
+  agentRunner?: typeof runAgent;
 }
 
 export interface TurnResult {
@@ -76,7 +82,11 @@ export async function runTurn(input: TurnInput): Promise<TurnResult | null> {
     customerName: input.customerName ?? null,
   });
 
-  const port = await buildAgentPort(db, tenant.slug, new Date(), conversation.id);
+  const port = await buildAgentPort(db, tenant.slug, new Date(), conversation.id, {
+    onBookingCreated: async (notice) => {
+      await notifyNewBooking(tenant, notice);
+    },
+  });
   if (!port) return null;
 
   await handleInbound(
@@ -85,7 +95,7 @@ export async function runTurn(input: TurnInput): Promise<TurnResult | null> {
       channel,
       agent: {
         run: async (history) => {
-          const result = await runAgent(port, history, {
+          const result = await (input.agentRunner ?? runAgent)(port, history, {
             apiKey: input.apiKey,
             model: input.model,
           });

@@ -208,6 +208,23 @@
   cursor: default;
 }
 
+/*
+ * The consent line. Deliberately quiet — it is a fact, not a warning — but it
+ * has to be readable at 11px and it must not push the input off a small phone.
+ */
+.bw-consent {
+  margin: 0;
+  padding: 0 12px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.bw-consent a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bw-bubble {
     transition: none;

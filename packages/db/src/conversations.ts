@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lt, ne } from "drizzle-orm";
 import type { Database } from "./client";
 import {
   conversations,
@@ -58,10 +58,11 @@ export async function appendMessage(
   conversationId: string,
   role: "user" | "assistant" | "staff" | "system",
   content: string,
+  author?: string | null,
 ): Promise<MessageRow> {
   const [row] = await db
     .insert(messages)
-    .values({ conversationId, role, content })
+    .values({ conversationId, role, content, author: author ?? null })
     .returning();
 
   await db
@@ -112,6 +113,27 @@ export async function setConversationStatus(
   status: "bot" | "needs_human" | "human" | "closed",
 ): Promise<void> {
   await db.update(conversations).set({ status }).where(eq(conversations.id, conversationId));
+}
+
+/**
+ * Close threads nobody has touched for a while.
+ *
+ * A closed thread stays readable and still stores new messages; the bot just
+ * stops answering into it. Quiet, not deleted.
+ */
+export async function closeIdleConversations(
+  db: Database,
+  before: Date,
+): Promise<number> {
+  const rows = await db
+    .update(conversations)
+    .set({ status: "closed" })
+    .where(
+      and(ne(conversations.status, "closed"), lt(conversations.lastMessageAt, before)),
+    )
+    .returning({ id: conversations.id });
+
+  return rows.length;
 }
 
 export async function listConversations(
@@ -169,6 +191,24 @@ export async function getConversation(
     where: eq(conversations.id, conversationId),
   });
   return row ?? null;
+}
+
+/**
+ * "A human has seen everything up to now."
+ *
+ * Called when staff open a thread and when they reply. Unread is everything the
+ * customer said after this instant, so it survives the status changing to
+ * `human` and back.
+ */
+export async function markConversationRead(
+  db: Database,
+  conversationId: string,
+  at: Date = new Date(),
+): Promise<void> {
+  await db
+    .update(conversations)
+    .set({ staffReadAt: at })
+    .where(eq(conversations.id, conversationId));
 }
 
 export async function messageThread(

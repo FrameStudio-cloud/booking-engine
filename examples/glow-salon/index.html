@@ -326,32 +326,34 @@
             <p class="cta-note">Replies in seconds. Weekdays and Saturdays, 9am – 6pm.</p>
           </div>
 
-          <aside class="card" aria-label="Services and prices">
+          <aside class="card" aria-label="Services and prices" data-services="glow-salon" data-api="http://127.0.0.1:8787">
             <h2>Services</h2>
             <p class="sub">Prices in Kenyan shillings.</p>
 
-            <div class="row">
-              <div>
-                <span class="name">Braiding</span>
-                <span class="dur">120 min</span>
+            <div id="services-list">
+              <div class="row">
+                <div>
+                  <span class="name">Braiding</span>
+                  <span class="dur">120 min</span>
+                </div>
+                <span class="price">KES 2,500</span>
               </div>
-              <span class="price">KES 2,500</span>
-            </div>
 
-            <div class="row">
-              <div>
-                <span class="name">Wash &amp; blow-dry</span>
-                <span class="dur">60 min</span>
+              <div class="row">
+                <div>
+                  <span class="name">Wash &amp; blow-dry</span>
+                  <span class="dur">60 min</span>
+                </div>
+                <span class="price">KES 1,200</span>
               </div>
-              <span class="price">KES 1,200</span>
-            </div>
 
-            <div class="row">
-              <div>
-                <span class="name">Trim</span>
-                <span class="dur">45 min</span>
+              <div class="row">
+                <div>
+                  <span class="name">Trim</span>
+                  <span class="dur">45 min</span>
+                </div>
+                <span class="price">KES 800</span>
               </div>
-              <span class="price">KES 800</span>
             </div>
           </aside>
         </div>
@@ -416,6 +418,46 @@
           if (window.BookingWidget) window.BookingWidget.open();
         });
       });
+
+      // Prices come from the engine, not from this file. If the fetch fails the
+      // rows above stay as they are, so the page never shows an empty card.
+      (() => {
+        const card = document.querySelector("[data-services]");
+        const list = document.getElementById("services-list");
+        if (!card || !list) return;
+
+        fetch(`${card.dataset.api}/api/tenants/${card.dataset.services}/services`)
+          .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+          .then((data) => {
+            if (!data.services || data.services.length === 0) return;
+
+            list.replaceChildren(
+              ...data.services.map((service) => {
+                const row = document.createElement("div");
+                row.className = "row";
+
+                const left = document.createElement("div");
+                const name = document.createElement("span");
+                name.className = "name";
+                name.textContent = service.name;
+                const duration = document.createElement("span");
+                duration.className = "dur";
+                duration.textContent = `${service.durationMinutes} min`;
+                left.append(name, duration);
+
+                const price = document.createElement("span");
+                price.className = "price";
+                price.textContent = service.price;
+
+                row.append(left, price);
+                return row;
+              }),
+            );
+          })
+          .catch(() => {
+            /* static fallback stays */
+          });
+      })();
     </script>
 
     <!-- The whole integration: one script tag. -->

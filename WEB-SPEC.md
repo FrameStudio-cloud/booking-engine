@@ -1,3 +1,6 @@
+> **Frozen.** This spec is retained for what was built; `apps/web` gets no new
+> work unless `PLAN-V2.md` §8 changes. The product is the engine, not this shell.
+
 # WEB-SPEC.md — the shell of the booking-engine web app
 
 **Who this is for:** the agent building the UI shell.

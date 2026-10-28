@@ -191,7 +191,7 @@ export const outboundMessageSchema = z.object({
 export type OutboundMessage = z.infer<typeof outboundMessageSchema>;
 
 // ---------------------------------------------------------------------------
-// Tenant config — the file a new business starts from.
+// Tenant config ï¿½ the file a new business starts from.
 //
 // One JSON file per business: who they are, what they sell, who works, when
 // they open. `pnpm tenant:new presets/glow-salon.json` turns it into rows.
@@ -246,16 +246,38 @@ export const tenantConfigSchema = z.object({
         .string()
         .min(1)
         .max(200)
-        .default("Hi — I can check what's free and hold a spot for you. What are you after?"),
+        .default("Hi ï¿½ I can check what's free and hold a spot for you. What are you after?"),
       replyTime: z.string().min(1).max(60).default("Usually replies instantly"),
     })
     .default({
-      greeting: "Hi — I can check what's free and hold a spot for you. What are you after?",
+      greeting: "Hi ï¿½ I can check what's free and hold a spot for you. What are you after?",
       replyTime: "Usually replies instantly",
     }),
 
   /** Facts the agent may quote: address, parking, payment, policies. */
   facts: z.record(z.string(), z.string()).default({}),
+
+  /** Where booking pings and the 07:00 digest go. No id means no messages. */
+  notify: z
+    .object({
+      telegramChatId: z.string().min(1).optional(),
+    })
+    .optional(),
+
+  /** Hosts allowed to read this tenant's public price list. Empty means any. */
+  allowedOrigins: z.array(z.string().url()).default([]),
+
+  /**
+   * What we promise the customer's customers. `retentionDays` bounds the chat
+   * transcript only â€” bookings and their price snapshots are kept forever.
+   */
+  privacy: z
+    .object({
+      retentionDays: z.number().int().min(1).max(3650).default(90),
+      url: z.string().url().optional(),
+      notice: z.string().min(1).max(200).optional(),
+    })
+    .default({ retentionDays: 90 }),
 
   services: z.array(tenantConfigServiceSchema).min(1),
   resources: z.array(tenantConfigResourceSchema).min(1),
@@ -274,3 +296,17 @@ export const tenantConfigSchema = z.object({
     .optional(),
 });
 export type TenantConfig = z.infer<typeof tenantConfigSchema>;
+
+/**
+ * The only money formatter. Minor units in, customer-safe text out.
+ *
+ * The bot, the API and any page must call this rather than dividing by 100 in
+ * three places â€” the format is part of the price the customer sees.
+ */
+export function formatMoney(minor: number, currency: string): string {
+  const amount = minor / 100;
+  return `${currency} ${new Intl.NumberFormat("en-KE", {
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount)}`;
+}

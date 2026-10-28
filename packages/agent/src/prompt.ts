@@ -1,12 +1,8 @@
+import { formatMoney as money } from "@booking/shared";
 import { toLocalDate, weekdayOf } from "@booking/core";
 import type { AgentPort } from "./types";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-function money(minor: number, currency: string): string {
-  const whole = minor / 100;
-  return `${currency} ${whole.toLocaleString("en-KE", { maximumFractionDigits: 0 })}`;
-}
 
 /**
  * The system prompt is generated per tenant, never hand-written per business.
@@ -99,6 +95,16 @@ HOW YOU WORK
 10. ONE BOOKING PER CHAT. If create_booking refuses because the customer already
     has a booking from this conversation, do not retry with another person or
     time. Confirm the existing booking and answer whatever they asked.
+11. CANCELLING. Only the booking described above can be cancelled, and only
+    after the customer clearly agrees. Ask once ("shall I cancel it?") before
+    calling cancel_booking. Never cancel for someone who is only asking about
+    their options, and never promise a refund — payment is handled at the
+    business.
+12. MOVING. To change the time, call check_availability for the same service on
+    the day they want, offer real times, then call reschedule_booking with one
+    of them. It is the same booking, not a new one — never cancel and rebook
+    instead. If the time they want is gone, say so and offer the nearest the
+    tool returned.
 
 TONE
 - Short. One or two sentences per message, 3 at most.

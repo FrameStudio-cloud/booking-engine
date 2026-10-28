@@ -8,6 +8,8 @@ export interface ToolState {
   offered: Set<string>;
   escalated: boolean;
   bookingId: string | null;
+  /** True once the chat's own booking was cancelled, so the model stops quoting it. */
+  cancelled: boolean;
   calls: string[];
 }
 
@@ -23,6 +25,7 @@ export function createTools(port: AgentPort): { tools: ToolSet; state: ToolState
     offered: new Set(),
     escalated: false,
     bookingId: null,
+    cancelled: false,
     calls: [],
   };
 
@@ -172,6 +175,90 @@ export function createTools(port: AgentPort): { tools: ToolSet; state: ToolState
           day: day.format(attempt.startsAt),
           startsAt: attempt.startsAt.toISOString(),
           with: customerName,
+        };
+      },
+    }),
+
+    cancel_booking: tool({
+      description:
+        "Cancel the booking this conversation already owns. Confirm with the customer before calling it. Never use it for anyone else's booking.",
+      inputSchema: z.object({
+        reason: z.string().optional().describe("Short reason the customer gave, e.g. 'changed plans'"),
+      }),
+      execute: async ({ reason }) => {
+        state.calls.push("cancel_booking()");
+
+        const held = port.existingBooking;
+        if (!held) {
+          return { error: "This conversation has no booking to cancel." };
+        }
+
+        const attempt = await port.cancelBooking({
+          bookingId: held.id,
+          reason: reason ?? null,
+        });
+
+        if (!attempt.ok) return { error: attempt.message };
+
+        state.cancelled = true;
+        return {
+          cancelled: true,
+          service: held.serviceName,
+          wasAt: `${day.format(held.startsAt)} at ${clock.format(held.startsAt)}`,
+        };
+      },
+    }),
+
+    reschedule_booking: tool({
+      description:
+        "Move the booking this conversation already owns to another time. Call check_availability first and use a time it returned.",
+      inputSchema: z.object({
+        startsAt: z
+          .string()
+          .describe("Exact ISO timestamp returned by check_availability in this conversation"),
+        reason: z.string().optional().describe("Short reason, e.g. 'running late'"),
+      }),
+      execute: async ({ startsAt, reason }) => {
+        state.calls.push(`reschedule_booking(${startsAt})`);
+
+        const held = port.existingBooking;
+        if (!held) {
+          return { error: "This conversation has no booking to move. Make a new booking instead." };
+        }
+
+        const when = new Date(startsAt);
+        if (Number.isNaN(when.getTime())) {
+          return { error: "startsAt must be an ISO timestamp returned by check_availability" };
+        }
+
+        // Same guard as creating: no invented slots, not even for a move.
+        if (!state.offered.has(when.toISOString())) {
+          return {
+            error:
+              "That time was not offered by check_availability in this conversation. Call check_availability and use a time it returned.",
+          };
+        }
+
+        const previous = `${day.format(held.startsAt)} at ${clock.format(held.startsAt)}`;
+
+        const attempt = await port.rescheduleBooking({
+          bookingId: held.id,
+          startsAt: when,
+          reason: reason ?? null,
+        });
+
+        if (!attempt.ok) {
+          state.offered.delete(when.toISOString());
+          return { error: attempt.message };
+        }
+
+        return {
+          rescheduled: true,
+          from: previous,
+          localTime: clock.format(attempt.startsAt),
+          day: day.format(attempt.startsAt),
+          startsAt: attempt.startsAt.toISOString(),
+          service: held.serviceName,
         };
       },
     }),

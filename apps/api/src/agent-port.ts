@@ -1,21 +1,39 @@
 import {
+  cancelBooking as persistCancel,
   createBooking as persistBooking,
   findBookingForConversation,
+  getBookingById,
   loadBusyIntervals,
   loadTenantContext,
   nameConversation,
+  rescheduleBooking as persistReschedule,
   resolveService,
   toSharedService,
   type Database,
 } from "@booking/db";
 import {
   getStrategy,
+  planReschedule,
   toLocalDate,
   validateBooking,
   zonedTimeToUtc,
 } from "@booking/core";
 import type { AgentPort, BookingAttempt, SlotsResult } from "@booking/agent";
 import type { LocalDate } from "@booking/shared";
+
+export interface BookingCreatedNotice {
+  bookingId: string;
+  customerName: string;
+  serviceName: string;
+  resourceName: string;
+  startsAt: Date;
+  source: string;
+}
+
+export interface AgentPortHooks {
+  /** Fired after a booking is actually written, for owner notifications. */
+  onBookingCreated?: (notice: BookingCreatedNotice) => Promise<void> | void;
+}
 
 /**
  * Binds the agent's abstract port to Postgres + the slot engine.
@@ -26,6 +44,7 @@ export async function buildAgentPort(
   slug: string,
   now: Date,
   conversationId?: string | null,
+  hooks?: AgentPortHooks,
 ): Promise<AgentPort | null> {
   const today = toLocalDate(now, "UTC");
   const seed = await loadTenantContext(db, slug, today, today);
@@ -199,6 +218,103 @@ export async function buildAgentPort(
       // one even when the channel never gave us one.
       if (conversationId && input.customerName) {
         await nameConversation(db, conversationId, input.customerName);
+      }
+
+      await hooks?.onBookingCreated?.({
+        bookingId: outcome.booking.id,
+        customerName: input.customerName,
+        serviceName: serviceRow.name,
+        resourceName: resource.name,
+        startsAt: outcome.booking.startsAt,
+        source: "agent",
+      });
+
+      return { ok: true, id: outcome.booking.id, startsAt: outcome.booking.startsAt };
+    },
+
+    async cancelBooking({ bookingId, reason }): Promise<BookingAttempt> {
+      const outcome = await persistCancel(db, {
+        tenantId: seed.tenant.id,
+        bookingId,
+        by: "agent",
+        reason: reason ?? null,
+      });
+
+      if (!outcome.ok) {
+        return {
+          ok: false,
+          message:
+            outcome.reason === "not_found"
+              ? "That booking no longer exists."
+              : "That booking could not be cancelled.",
+        };
+      }
+
+      return { ok: true, id: outcome.booking.id, startsAt: outcome.booking.startsAt };
+    },
+
+    async rescheduleBooking({ bookingId, startsAt, reason }): Promise<BookingAttempt> {
+      const booking = await getBookingById(db, seed.tenant.id, bookingId);
+      if (!booking) return { ok: false, message: "That booking no longer exists." };
+
+      const date = toLocalDate(startsAt, timezone);
+      const scoped = await loadTenantContext(db, slug, date, date);
+      if (!scoped) return { ok: false, message: "Unknown business." };
+
+      const resource = scoped.resources.find((r) => r.id === booking.resourceId);
+      if (!resource) {
+        return { ok: false, message: "That booking has no live staff member." };
+      }
+
+      const serviceRow = scoped.services.find((s) => s.id === booking.serviceId);
+
+      const busy = await loadBusyIntervals(
+        db,
+        scoped.tenant.id,
+        padDays(startsAt, -2),
+        padDays(startsAt, 2),
+      );
+
+      const plan = planReschedule({
+        booking: {
+          resourceId: booking.resourceId,
+          startsAt: booking.startsAt,
+          endsAt: booking.endsAt,
+          status: booking.status,
+        },
+        newStart: startsAt,
+        request: { resourceId: booking.resourceId, startsAt, endsAt: startsAt },
+        resource: { id: resource.id, name: resource.name, capacity: resource.capacity },
+        timezone,
+        now,
+        capacity: serviceRow?.capacity ?? 1,
+        bufferBeforeMinutes: serviceRow?.bufferBeforeMinutes ?? 0,
+        busy,
+        rules: scoped.rules,
+        exceptions: scoped.exceptions,
+      });
+
+      if (!plan.ok) {
+        return {
+          ok: false,
+          message:
+            plan.reason === "conflict"
+              ? "That time was just taken. Offer the customer another."
+              : plan.message,
+        };
+      }
+
+      const outcome = await persistReschedule(db, {
+        tenantId: scoped.tenant.id,
+        bookingId,
+        startsAt: plan.startsAt,
+        endsAt: plan.endsAt,
+        by: "agent",
+        reason: reason ?? null,
+      });
+
+      if (!outcome.ok) {
+        return { ok: false, message: "That time was just taken. Offer another." };
       }
 
       return { ok: true, id: outcome.booking.id, startsAt: outcome.booking.startsAt };

@@ -7,6 +7,7 @@ import type {
 } from "@booking/shared";
 import type { BusyInterval } from "@booking/core";
 import type { Database } from "./client";
+import { readTenantCache, writeTenantCache } from "./tenant-cache";
 import {
   availabilityExceptions,
   availabilityRules,
@@ -32,8 +33,19 @@ export async function getTenantBySlug(
   db: Database,
   slug: string,
 ): Promise<TenantRow | null> {
+  const cached = readTenantCache(db, slug);
+  if (cached !== undefined) return cached;
+
   const row = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) });
-  return row ?? null;
+  const tenant = row ?? null;
+
+  writeTenantCache(db, slug, tenant);
+  return tenant;
+}
+
+/** Every live business, for the scheduled digest. */
+export async function listActiveTenants(db: Database): Promise<TenantRow[]> {
+  return db.select().from(tenants).where(eq(tenants.active, true));
 }
 
 /** One round trip for everything the slot engine needs about a business. */
@@ -86,6 +98,18 @@ export async function loadTenantContext(
       note: e.note,
     })),
   };
+}
+
+/** Public price list: active services only, nothing personal. */
+export async function listPublicServices(
+  db: Database,
+  tenantId: string,
+): Promise<ServiceRow[]> {
+  return db
+    .select()
+    .from(services)
+    .where(and(eq(services.tenantId, tenantId), eq(services.active, true)))
+    .orderBy(asc(services.name));
 }
 
 /** Existing bookings that could collide with anything in this window. */
@@ -250,6 +274,9 @@ export async function createBooking(
         resourceId: input.resourceId,
         startsAt: input.startsAt,
         endsAt: input.endsAt,
+        serviceNameAtBooking: service.name,
+        durationMinutesAtBooking: service.durationMinutes,
+        priceMinorAtBooking: service.priceMinor,
         status: "confirmed",
         customerName: input.customerName,
         customerPhone: input.customerPhone ?? null,
@@ -263,9 +290,140 @@ export async function createBooking(
   });
 }
 
+export async function getBookingById(
+  db: Database,
+  tenantId: string,
+  bookingId: string,
+): Promise<BookingRow | null> {
+  const [row] = await db
+    .select()
+    .from(bookings)
+    .where(and(eq(bookings.id, bookingId), eq(bookings.tenantId, tenantId)));
+
+  return row ?? null;
+}
+
+export type BookingChangeOutcome =
+  | { ok: true; booking: BookingRow; alreadyCancelled?: boolean }
+  | { ok: false; reason: "not_found" | "cancelled" | "resource_busy" };
+
+/**
+ * Cancel is a status change, never a delete: the row carries the price and
+ * duration that were agreed, and the calendar's conflict query ignores it.
+ * Idempotent — a second cancel returns the row untouched.
+ */
+export async function cancelBooking(
+  db: Database,
+  input: { tenantId: string; bookingId: string; by: string; reason?: string | null },
+): Promise<BookingChangeOutcome> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.id, input.bookingId), eq(bookings.tenantId, input.tenantId)))
+      .for("update");
+
+    if (!row) return { ok: false, reason: "not_found" } as const;
+    if (row.status === "cancelled") {
+      return { ok: true, booking: row, alreadyCancelled: true } as const;
+    }
+
+    const [updated] = await tx
+      .update(bookings)
+      .set({
+        status: "cancelled",
+        statusChangedAt: new Date(),
+        statusChangedBy: input.by,
+        statusReason: input.reason ?? null,
+      })
+      .where(eq(bookings.id, row.id))
+      .returning();
+
+    return { ok: true, booking: updated!, alreadyCancelled: false } as const;
+  });
+}
+
+/**
+ * Move one booking, under the same row lock as a create.
+ *
+ * The pre-check in core decided hours and buffer; this re-counts conflicts
+ * against committed rows so a slot taken in between still loses honestly. The
+ * booking is excluded from its own overlap count.
+ */
+export async function rescheduleBooking(
+  db: Database,
+  input: {
+    tenantId: string;
+    bookingId: string;
+    startsAt: Date;
+    endsAt: Date;
+    by: string;
+    reason?: string | null;
+  },
+): Promise<BookingChangeOutcome> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.id, input.bookingId), eq(bookings.tenantId, input.tenantId)))
+      .for("update");
+
+    if (!row) return { ok: false, reason: "not_found" } as const;
+    if (row.status === "cancelled") return { ok: false, reason: "cancelled" } as const;
+
+    const [resource] = await tx
+      .select()
+      .from(resources)
+      .where(eq(resources.id, row.resourceId))
+      .for("update");
+
+    if (!resource) return { ok: false, reason: "not_found" } as const;
+
+    const [service] = await tx
+      .select()
+      .from(services)
+      .where(eq(services.id, row.serviceId));
+
+    const capacity = Math.min(
+      resource.capacity,
+      Math.max(1, service?.capacity ?? 1),
+    );
+
+    const overlapping = await tx
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.resourceId, row.resourceId),
+          ne(bookings.status, "cancelled"),
+          ne(bookings.id, row.id),
+          lt(bookings.startsAt, input.endsAt),
+          gt(bookings.endsAt, input.startsAt),
+        ),
+      );
+
+    if (overlapping.length >= capacity) {
+      return { ok: false, reason: "resource_busy" } as const;
+    }
+
+    const [updated] = await tx
+      .update(bookings)
+      .set({
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        statusChangedAt: new Date(),
+        statusChangedBy: input.by,
+        statusReason: input.reason ?? null,
+      })
+      .where(eq(bookings.id, row.id))
+      .returning();
+
+    return { ok: true, booking: updated! } as const;
+  });
+}
+
 /** Cheap liveness check for /health. */
-export async function pingDatabase(db: Database): Promise<boolean> {
-  try {
+export async function pingDatabase(db: Database): Promise<boolean> {  try {
     await db.execute(sql`select 1`);
     return true;
   } catch {

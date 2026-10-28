@@ -29,6 +29,8 @@ function fakePort(overrides: Partial<AgentPort> = {}): AgentPort {
       id: "booking-1",
       startsAt: SLOT.startsAt,
     }),
+    cancelBooking: async () => ({ ok: true, id: "booking-1", startsAt: SLOT.startsAt }),
+    rescheduleBooking: async () => ({ ok: true, id: "booking-1", startsAt: SLOT.startsAt }),
     ...overrides,
   };
 }
@@ -42,7 +44,12 @@ const call = (fn: unknown, input: unknown) =>
 
 /** ToolSet erases the keys, so name them once for the tests. */
 type ExecutableTools = Record<
-  "check_availability" | "create_booking" | "get_business_info" | "escalate_to_human",
+  | "check_availability"
+  | "create_booking"
+  | "cancel_booking"
+  | "reschedule_booking"
+  | "get_business_info"
+  | "escalate_to_human",
   { execute: (input: unknown, options: unknown) => Promise<unknown> }
 >;
 
@@ -195,5 +202,74 @@ describe("createTools", () => {
     await call(tools.escalate_to_human.execute, { reason: "Wants a refund" });
 
     expect(state.escalated).toBe(true);
+  });
+});
+
+describe("cancel and reschedule", () => {
+  const held = {
+    id: "booking-existing",
+    serviceName: "Trim",
+    resourceName: "Amani",
+    startsAt: new Date("2026-10-27T06:00:00.000Z"),
+  };
+
+  it("cancels only the booking this chat owns", async () => {
+    let asked = "";
+    const { tools, state } = build(
+      fakePort({
+        existingBooking: held,
+        cancelBooking: async ({ bookingId }) => {
+          asked = bookingId;
+          return { ok: true, id: bookingId, startsAt: held.startsAt };
+        },
+      }),
+    );
+
+    const result = (await call(tools.cancel_booking.execute, {
+      reason: "changed plans",
+    })) as { cancelled?: boolean };
+
+    expect(result.cancelled).toBe(true);
+    expect(asked).toBe(held.id);
+    expect(state.cancelled).toBe(true);
+  });
+
+  it("refuses to cancel when the chat has no booking", async () => {
+    const { tools } = build(fakePort());
+    const result = (await call(tools.cancel_booking.execute, {})) as { error?: string };
+
+    expect(result.error).toMatch(/no booking/i);
+  });
+
+  it("reschedules to an offered time instead of booking a second time", async () => {
+    let movedTo: Date | undefined;
+    const { tools } = build(
+      fakePort({
+        existingBooking: held,
+        rescheduleBooking: async ({ startsAt, bookingId }) => {
+          movedTo = startsAt;
+          return { ok: true, id: bookingId, startsAt };
+        },
+      }),
+    );
+
+    await call(tools.check_availability.execute, { service: "Trim", date: "2026-10-27" });
+
+    const result = (await call(tools.reschedule_booking.execute, {
+      startsAt: "2026-10-27T06:00:00.000Z",
+    })) as { rescheduled?: boolean };
+
+    expect(result.rescheduled).toBe(true);
+    expect(movedTo?.toISOString()).toBe("2026-10-27T06:00:00.000Z");
+  });
+
+  it("refuses to move a booking to a time the engine never offered", async () => {
+    const { tools } = build(fakePort({ existingBooking: held }));
+
+    const result = (await call(tools.reschedule_booking.execute, {
+      startsAt: "2026-10-27T11:00:00.000Z",
+    })) as { error?: string };
+
+    expect(result.error).toMatch(/check_availability/);
   });
 });

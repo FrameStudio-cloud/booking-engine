@@ -15,7 +15,11 @@
     "push": "drizzle-kit push",
     "studio": "drizzle-kit studio",
     "seed": "tsx src/seed.ts",
-    "tenant:new": "tsx src/cli/create-tenant.ts"
+    "test": "vitest run",
+    "tenant:new": "tsx src/cli/create-tenant.ts",
+    "tenant:apply": "tsx src/cli/apply-tenant.ts",
+    "tenant:channel": "tsx src/cli/channel.ts",
+    "tenant:erase": "tsx src/cli/erase.ts"
   },
   "dependencies": {
     "@booking/core": "workspace:*",
@@ -27,6 +31,7 @@
     "@types/node": "^26.6.5",
     "drizzle-kit": "^0.31.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.7"
   }
 }

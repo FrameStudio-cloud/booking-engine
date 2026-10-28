@@ -5,11 +5,19 @@ import { useCallback, useEffect, useState } from "react";
 
 export const TENANT = "glow-salon";
 
+// The engine rejects dashboard reads without the machine key. Vite inlines
+// VITE_* at build time, so `apps/web/.env.local` holds it in dev and the build
+// environment holds it in production.
+const ENGINE_KEY = import.meta.env.VITE_ENGINE_API_KEY ?? "";
+
 const base = () => `/api/tenants/${TENANT}`;
 
 async function request(path, init) {
   const res = await fetch(base() + path, {
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(ENGINE_KEY ? { "x-engine-key": ENGINE_KEY } : {}),
+    },
     ...init,
   });
 
